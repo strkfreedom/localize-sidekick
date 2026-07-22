@@ -1,29 +1,29 @@
-# Locale Editor (Figma Plugin)
+# Localize Sidekick (Figma Plugin)
 
-Locale Editor is a powerful and highly optimized Figma plugin designed to streamline the management of string variables for localization. It seamlessly handles context-aware variable discovery, batch editing, and auto-translation to rapidly speed up your design-to-production workflows.
+Localize Sidekick is a powerful, split-pane editor designed to seamlessly manage, bind, and create text variables across your designs. It acts as a dedicated localization editor right next to your UI, allowing you to easily view and edit text for multiple languages side-by-side.
 
 ## 🚀 Core Functionalities
 
 ### 1. Context-Aware Variable Editing
-* **Smart Selection Scanning:** Instantly scans your current Figma selection and lists all Text nodes bound to string variables.
-* **Bulk Mode Editing:** Presents a clean, collapsible accordion interface displaying all variable modes (languages) simultaneously.
+* **Side-by-side Language Editing:** View and edit translations for all your variable modes at a glance.
+* **Smart Selection Scanning:** Instantly scans your current Figma selection and groups all bound and unbound text into a clean editor.
 * **Auto-Apply:** Changes are applied and synced directly to the Figma canvas in real-time as you type.
 
-### 2. Streamlined Variable Creation & Auto-Translation
-* **One-Click Binding:** Select any unbound text node, and the plugin instantly offers a smooth UI to create and bind a new variable.
+### 2. Streamlined Variable Creation
+* **Find Unbound Text:** Instantly discover hardcoded text layers that aren't linked to a variable and bind them with a single click in the dedicated "Unbound Labels" tab.
 * **Auto-Translation Engine:** When creating a new variable, simply leave a language mode blank, and the plugin will seamlessly use the Google Translate API to translate your base text into the target language automatically.
 * **Smart Defaults:** Persistently remembers your last-used variable collection to speed up repetitive creation workflows.
 
 ### 3. Inline Management Tools
+* **Smart Filtering:** Ignore specific layers, filter by local collections, and easily search through hundreds of variables.
 * **Rename Variables:** Click the pencil icon to quickly rename variables directly within the plugin.
-* **Safe Deletion:** A built-in "Delete Variable" flow tucked securely at the bottom of the edit screen prevents accidental clicks with a two-step "Confirm Delete?" safeguard.
-* **Copy to Clipboard:** A dedicated copy icon allows you to instantly copy variable names for use in your codebase.
-* **Duplicate Name Protection:** If you attempt to create or rename a variable using an existing name, the UI cleanly highlights the input in red and warns you immediately.
+* **Safe Deletion:** A built-in "Delete Variable" flow securely placed at the bottom of the edit screen prevents accidental clicks.
+* **Duplicate Name Protection:** The UI cleanly highlights inputs in red and warns you immediately if a name collision occurs.
 
 ### 4. Highly Optimized Performance
-* **Batch Processing:** Uses a "Load More" mechanism to process massive selections without freezing the Figma UI.
-* **Targeted Re-rendering:** Reacts intelligently to selection changes, only rebuilding the DOM when necessary, ensuring a buttery smooth editing experience.
-* **Flexible UI:** Completely resizable interface that respects your screen real-estate.
+* **Blazing Fast:** Built from the ground up for massive files with smooth, 60fps performance and buttery animations.
+* **Smart Chunking:** Scans huge files asynchronously, perfectly chunking work to ensure Figma remains responsive and your canvas panning never stutters.
+* **Flexible UI:** Completely resizable interface that remembers your preferences.
 
 ## 🛠 Usage
 1. Open the plugin in Figma.
