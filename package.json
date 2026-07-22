@@ -1,0 +1,21 @@
+{
+  "name": "localize-sidekick",
+  "version": "1.0.0",
+  "description": "Figma plugin for side-by-side localization editing",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch"
+  },
+  "keywords": [
+    "figma",
+    "plugin",
+    "localization"
+  ],
+  "author": "MeowJot",
+  "license": "UNLICENSED",
+  "private": true,
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.130.0",
+    "typescript": "^4.9.5"
+  }
+}

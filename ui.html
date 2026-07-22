@@ -1,0 +1,2070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Locale Editor</title>
+  <style>
+    /* -----------------------------------------------------------------------
+       Design tokens – Figma CSS vars with dark fallbacks
+    ----------------------------------------------------------------------- */
+    :root {
+      --bg-page:        var(--figma-color-bg, #222222);
+      --bg-card:        var(--figma-color-bg-secondary, #2c2c2c);
+      --bg-input:       var(--figma-color-bg-tertiary, #383838);
+      --bg-hover:       var(--figma-color-bg-hover, #333333);
+      --text-primary:   var(--figma-color-text, #FFFFFF);
+      --text-secondary: var(--figma-color-text-secondary, #b3b3b3);
+      --text-muted:     var(--figma-color-text-tertiary, #808080);
+      --accent:         var(--figma-color-bg-brand, #0d99ff);
+      --accent-hover:   var(--figma-color-bg-brand-hover, #007be5);
+      --accent-disabled: var(--figma-color-bg-brand-disabled, #333333);
+      --text-disabled:  var(--figma-color-text-disabled, #757575);
+      --border:         var(--figma-color-border, #444444);
+      --border-focus:   var(--figma-color-border-brand-strong, #0d99ff);
+      --danger:         var(--figma-color-icon-danger, #f24822);
+      --success:        var(--figma-color-icon-success, #14a83b);
+      --radius:         6px;
+      --radius-sm:      4px;
+      --font:           "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont,
+                        "Segoe UI", sans-serif;
+      --transition:     150ms ease;
+    }
+
+    /* -----------------------------------------------------------------------
+       Reset & base
+    ----------------------------------------------------------------------- */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      background: var(--bg-page);
+      color: var(--text-primary);
+      font-family: var(--font);
+      font-size: 12px;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* -----------------------------------------------------------------------
+       Main layout
+    ----------------------------------------------------------------------- */
+    #mainContent {
+      flex: 1;
+      overflow-y: auto;
+      padding-bottom: 24px;
+    }
+
+    #mainContent::-webkit-scrollbar {
+      width: 4px;
+    }
+    #mainContent::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    #mainContent::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+    }
+
+    /* -----------------------------------------------------------------------
+       Empty state
+    ----------------------------------------------------------------------- */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 24px;
+      gap: 12px;
+      text-align: center;
+    }
+
+    .empty-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: var(--bg-card);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+    }
+
+    .empty-icon svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .empty-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    /* -----------------------------------------------------------------------
+       Collection Section
+    ----------------------------------------------------------------------- */
+    .collection-header {
+      padding: 16px 16px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .collection-header-icon {
+      color: var(--text-muted);
+    }
+    .variable-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 12px;
+    }
+
+    /* -----------------------------------------------------------------------
+       Variable card
+    ----------------------------------------------------------------------- */
+    .var-card {
+      background: var(--bg-card);
+      border-radius: var(--radius);
+      border: 1px solid transparent;
+      overflow: hidden;
+      transition: border-color var(--transition);
+    }
+
+    /* Card header */
+    .var-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      user-select: none;
+      transition: background var(--transition);
+    }
+
+    .var-header:hover {
+      background: var(--bg-hover);
+    }
+
+    .var-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      flex-shrink: 0;
+      border: 1px solid var(--border);
+    }
+
+    .var-name-wrap {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .var-name {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dirty-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--danger);
+      flex-shrink: 0;
+      opacity: 0;
+      transition: opacity var(--transition);
+    }
+
+    .var-header-right {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .edit-var-btn, .copy-var-btn {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--transition), color var(--transition);
+      color: var(--text-secondary);
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .var-card:hover .edit-var-btn, .var-card:hover .copy-var-btn {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .edit-var-btn:hover, .copy-var-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .rename-input {
+      background: var(--bg-input);
+      color: var(--text-primary);
+      border: 1px solid var(--border-focus);
+      border-radius: 4px;
+      padding: 2px 4px;
+      font-size: 11px;
+      font-family: var(--font);
+      font-weight: 600;
+      outline: none;
+      width: 100%;
+      margin-right: 8px;
+    }
+
+    .chevron {
+      color: var(--text-muted);
+      transition: transform 200ms ease;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      padding: 4px;
+      margin-right: -4px;
+      transform: rotate(180deg);
+    }
+    .chevron:hover {
+      color: var(--text-primary);
+    }
+
+    .chevron svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .var-card.collapsed .chevron {
+      transform: rotate(0);
+    }
+
+    /* Card body */
+    .var-body-wrapper {
+      display: grid;
+      grid-template-rows: 1fr;
+      transition: grid-template-rows 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .var-card.collapsed .var-body-wrapper {
+      grid-template-rows: 0fr;
+    }
+
+    .var-body {
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .var-body-inner {
+      padding: 0 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Mode row */
+    .mode-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .mode-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding-left: 2px;
+    }
+
+    /* Textarea */
+    .mode-textarea {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: var(--font);
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 8px 10px;
+      resize: none;
+      outline: none;
+      transition: border-color var(--transition), background var(--transition);
+      overflow: hidden; /* JS manages height */
+    }
+
+    .mode-textarea:focus {
+      border-color: var(--border-focus);
+      background: var(--bg-card);
+    }
+
+    .mode-textarea.changed {
+      border-color: var(--border-focus);
+    }
+
+    .mode-textarea.empty {
+      background: rgba(255, 194, 71, 0.08);
+      border: 1px dashed rgba(255, 194, 71, 0.4);
+    }
+    .mode-textarea.empty:focus {
+      background: var(--bg-card);
+      border-style: solid;
+      border-color: var(--border-focus);
+    }
+
+    .mode-textarea[readonly] {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .mode-textarea[readonly]:focus {
+      border-color: transparent;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* -----------------------------------------------------------------------
+       Top Header
+    ----------------------------------------------------------------------- */
+    .top-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-page);
+      flex-shrink: 0;
+    }
+    .top-header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .top-header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .icon-btn {
+      width: 26px;
+      height: 26px;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition);
+    }
+    .icon-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-primary);
+    }
+    .select-dropdown {
+      background: var(--bg-input);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 4px 8px;
+      font-size: 11px;
+      font-family: var(--font);
+      outline: none;
+      cursor: pointer;
+      min-width: 140px;
+    }
+    .select-dropdown:hover {
+      background: var(--bg-hover);
+    }
+
+    /* Search Box */
+    .search-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .search-icon {
+      position: absolute;
+      left: 6px;
+      width: 14px;
+      height: 14px;
+      color: var(--text-secondary);
+      pointer-events: none;
+    }
+    .search-input {
+      background: var(--bg-input);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 4px 8px 4px 24px;
+      font-size: 11px;
+      font-family: var(--font);
+      outline: none;
+      width: 130px;
+      transition: all var(--transition);
+    }
+    .search-input:focus {
+      border-color: var(--border-focus);
+      width: 170px;
+    }
+    .search-input::placeholder {
+      color: var(--text-secondary);
+      opacity: 0.6;
+    }
+
+    /* Load More Button */
+    .load-more-btn {
+      width: 100%;
+      margin-top: 16px;
+      padding: 8px 12px;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 11px;
+      font-family: var(--font);
+      font-weight: 500;
+      transition: background var(--transition);
+    }
+    .load-more-btn:hover {
+      background: var(--bg-hover);
+    }
+
+    /* -----------------------------------------------------------------------
+       Footer / bottom bar
+    ----------------------------------------------------------------------- */
+    .footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-page);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .footer.auto-apply-on .footer-right {
+      display: none;
+    }
+
+    /* Auto-apply toggle */
+    .auto-apply-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      padding-left: 12px;
+      border-left: 1px solid var(--border);
+    }
+    .auto-apply-toggle input {
+      display: none;
+    }
+    .toggle-slider {
+      width: 26px;
+      height: 14px;
+      background: var(--bg-input);
+      border-radius: 7px;
+      position: relative;
+      transition: background 150ms;
+      border: 1px solid var(--border);
+    }
+    .toggle-slider::after {
+      content: "";
+      position: absolute;
+      top: 1px;
+      left: 1px;
+      width: 10px;
+      height: 10px;
+      background: var(--text-muted);
+      border-radius: 50%;
+      transition: transform 150ms, background 150ms;
+    }
+    .auto-apply-toggle input:checked + .toggle-slider {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .auto-apply-toggle input:checked + .toggle-slider::after {
+      transform: translateX(12px);
+      background: #fff;
+    }
+    .toggle-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      user-select: none;
+    }
+
+    .footer-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Generic buttons */
+    button {
+      font-family: var(--font);
+      font-size: 11px;
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: background var(--transition), color var(--transition), opacity var(--transition);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    /* Ghost button (Undo / Refresh) */
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-secondary);
+      padding: 6px 10px;
+    }
+
+    .btn-ghost:not(:disabled):hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-primary);
+    }
+
+    /* Primary button (Apply) */
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      font-weight: 500;
+      padding: 6px 14px;
+    }
+
+    .btn-primary:not(:disabled):hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-primary:disabled {
+      background: var(--accent-disabled);
+      color: var(--text-disabled);
+    }
+
+    .refresh-icon.spinning {
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Resize Handle */
+    #resizeHandle {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 14px;
+      height: 14px;
+      padding: 4px;
+      box-sizing: content-box;
+      cursor: nwse-resize;
+      color: var(--text-muted);
+      opacity: 0.5;
+      transition: opacity var(--transition);
+      z-index: 50;
+    }
+    #resizeHandle:hover {
+      opacity: 1;
+    }
+
+    /* -----------------------------------------------------------------------
+       Loading State
+    ----------------------------------------------------------------------- */
+    .loading-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      text-align: center;
+    }
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid rgba(0, 0, 0, 0.1);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 12px;
+    }
+    .dark-mode .spinner {
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: var(--accent);
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes fadeIn {
+      to { opacity: 1; }
+    }
+
+    /* -----------------------------------------------------------------------
+       Toast
+    ----------------------------------------------------------------------- */
+    .toast {
+      position: fixed;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%) translateY(6px);
+      background: #1E1E1E;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 16px;
+      font-size: 11px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 250ms ease, transform 250ms ease;
+      z-index: 100;
+    }
+    .toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .toast-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+      flex-shrink: 0;
+    }
+    .toast.error .toast-dot {
+      background: var(--danger);
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-hover);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 3px 6px;
+      font-size: 11px;
+      color: var(--text-primary);
+    }
+    .pill .remove-btn {
+      cursor: pointer;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color var(--transition);
+    }
+    .pill .remove-btn:hover {
+      color: var(--danger);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- =====================================================================
+       TABS HEADER
+  ====================================================================== -->
+  <div class="tabs-container" id="tabsContainer" style="display: flex; background: var(--bg-page); border-bottom: 1px solid var(--border); padding: 0 12px; flex-shrink: 0;">
+    <button class="tab-btn active" data-tab="bound" style="background: transparent; border: none; color: var(--text-primary); padding: 10px 12px; font-size: 11px; font-weight: 500; cursor: pointer; border-bottom: 2px solid var(--accent); transition: color var(--transition), border-color var(--transition);">Variables</button>
+    <button class="tab-btn" data-tab="unbound" style="background: transparent; border: none; color: var(--text-secondary); padding: 10px 12px; font-size: 11px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; transition: color var(--transition), border-color var(--transition);">Unbound Labels</button>
+  </div>
+
+  <!-- =====================================================================
+       TAB: BOUND VARIABLES
+  ====================================================================== -->
+  <div class="tab-content active" id="tabBound" style="display: flex; flex: 1; flex-direction: column; overflow: hidden;">
+
+  <!-- =====================================================================
+       TOP HEADER (Filters and Toggles)
+  ====================================================================== -->
+  <div class="top-header">
+    <div class="top-header-left">
+      <select id="collectionFilter" class="select-dropdown">
+        <option value="all">All collections</option>
+        <option value="local">Local collections only</option>
+      </select>
+      <div class="search-wrap">
+        <svg class="search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="7" cy="7" r="4.5" />
+          <line x1="10.5" y1="10.5" x2="14" y2="14" />
+        </svg>
+        <input type="text" id="searchInput" class="search-input" placeholder="Search variables..." spellcheck="false" />
+      </div>
+    </div>
+    <div class="top-header-right">
+      <button class="icon-btn" id="toggleExpandBtn" title="Collapse all" data-state="expanded">
+        <svg id="icon-collapse" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16">
+          <polyline points="3 10 8 5 13 10" />
+        </svg>
+        <svg id="icon-expand" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16" style="display: none;">
+          <polyline points="3 6 8 11 13 6" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       MAIN CONTENT (Variables by Collection)
+  ====================================================================== -->
+  <div id="mainContent"></div>
+
+  <!-- =====================================================================
+       FOOTER (Global Apply / Undo)
+  ====================================================================== -->
+  <div class="footer auto-apply-on">
+    <div class="footer-left">
+      <button class="btn-ghost" id="refreshBtn" title="Re-scan selection">
+        <svg class="refresh-icon" id="refreshIcon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="12" height="12">
+          <path d="M13.5 8A5.5 5.5 0 1 1 10 3.1"/>
+          <polyline points="10 1 10 3.5 12.5 3.5"/>
+        </svg>
+        Refresh
+      </button>
+      <label class="auto-apply-toggle" title="Save changes automatically as you type">
+        <input type="checkbox" id="autoApplyToggle" checked />
+        <span class="toggle-slider"></span>
+        <span class="toggle-label">Auto-apply</span>
+      </label>
+    </div>
+    <div class="footer-right">
+      <button class="btn-ghost" id="undoBtn" disabled>Undo</button>
+      <button class="btn-primary" id="applyBtn" disabled>Apply</button>
+    </div>
+  </div>
+  </div> <!-- End Tab Bound -->
+
+  <!-- =====================================================================
+       TAB: UNBOUND LABELS
+  ====================================================================== -->
+  <div class="tab-content" id="tabUnbound" style="display: none; flex: 1; flex-direction: column; overflow: hidden; background: var(--bg-page);">
+    <div class="top-header" style="padding: 10px 16px; border-bottom: 1px solid var(--border); flex-direction: column; align-items: stretch; gap: 8px;">
+      <div style="display: flex; gap: 8px; align-items: stretch;">
+        <div class="search-wrap" style="flex: 1;">
+          <input type="text" id="negativeListInput" class="search-input" style="padding-left: 8px; width: 100%;" placeholder="Add layer name to ignore... (press Enter)" spellcheck="false" title="Type a layer name and press Enter" />
+        </div>
+        <button class="btn-ghost" id="clearNegativeListBtn" style="padding: 4px 12px; font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius-sm);" title="Clear all ignored layer names">Clear all</button>
+      </div>
+      <div id="negativeListPills" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+    </div>
+    <div id="unboundListActions" style="display: flex; justify-content: flex-end; padding: 12px 16px 8px; gap: 8px; flex-shrink: 0;">
+      <button class="btn-ghost" id="selectAllUnboundBtn" style="padding: 4px 12px; font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius-sm);" title="Highlight all unbound nodes below on canvas">Highlight all</button>
+      <button class="btn-ghost" id="ignoreAllUnboundBtn" style="padding: 4px 12px; font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius-sm);" title="Add all below layer names to the ignore list">Ignore all</button>
+    </div>
+    <div id="unboundContent" style="flex: 1; overflow-y: auto; padding: 12px 16px 16px;">
+      <div class="empty-state" id="unboundEmptyState">
+        <div class="empty-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="3"/>
+            <path d="M9 12h6M9 8h6M9 16h3"/>
+          </svg>
+        </div>
+        <div class="empty-title">No unbound text labels in selection</div>
+      </div>
+      <div id="unboundList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+    </div>
+    <div class="footer" style="justify-content: center; background: var(--bg-card); flex-shrink: 0; padding: 12px 16px; border-top: 1px solid var(--border);">
+      <button class="btn-ghost" id="scanAllUnboundBtn" style="width: 100%; border: 1px dashed var(--border); padding: 8px; font-weight: 500; display: none;">Scan all labels (the rest)</button>
+    </div>
+  </div>
+
+  <!-- Resize Handle -->
+  <svg id="resizeHandle" viewBox="0 0 16 16" fill="none">
+    <path d="M14 8L8 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M14 11.5L11.5 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>
+
+  <!-- =====================================================================
+       TOAST
+  ====================================================================== -->
+  <div class="toast" id="toast">
+    <div class="toast-dot"></div>
+    <span id="toastMsg">Changes applied.</span>
+  </div>
+
+  <!-- =====================================================================
+       JAVASCRIPT
+  ====================================================================== -->
+  <script>
+    /**
+     * @typedef {{ modeId: string, modeName: string, value: string }} ModeValue
+     * @typedef {{ variableId: string, variableName: string, collectionName: string, modes: ModeValue[] }} BoundVariable
+     */
+
+    let currentVariables = [];
+    const dirtyValues = new Map();
+    const expandedCards = new Set();
+    let hasMoreFromPlugin = false;
+    let isLoadingMore = false;
+
+    let unboundNode = null;
+    let localCollections = [];
+    let lastCollectionId = null;
+    let currentUnboundNodes = [];
+    let hasMoreUnbound = false;
+    let currentNegativeList = [];
+    let isSelectionEmpty = true;
+
+    const tabsContainer = document.getElementById("tabsContainer");
+    const tabBtns = document.querySelectorAll(".tab-btn");
+    const tabContents = document.querySelectorAll(".tab-content");
+    const unboundList = document.getElementById("unboundList");
+    const unboundEmptyState = document.getElementById("unboundEmptyState");
+    const scanAllUnboundBtn = document.getElementById("scanAllUnboundBtn");
+
+    const mainContent = document.getElementById("mainContent");
+    const applyBtn    = document.getElementById("applyBtn");
+    const undoBtn     = document.getElementById("undoBtn");
+    const refreshBtn  = document.getElementById("refreshBtn");
+    const refreshIcon = document.getElementById("refreshIcon");
+    const autoApplyToggle = document.getElementById("autoApplyToggle");
+    const toast       = document.getElementById("toast");
+    const toastMsg    = document.getElementById("toastMsg");
+
+    const collectionFilter = document.getElementById("collectionFilter");
+    const searchInput = document.getElementById("searchInput");
+    const toggleExpandBtn = document.getElementById("toggleExpandBtn");
+
+    let toastTimeout = null;
+    function showToast(message, isError = false) {
+      toastMsg.textContent = message;
+      if (isError) {
+        toast.classList.add("error");
+      } else {
+        toast.classList.remove("error");
+      }
+      toast.classList.add("visible");
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.remove("visible");
+      }, 2000);
+    }
+
+    // -----------------------------------------------------------------------
+    // Message handling from plugin controller
+    // -----------------------------------------------------------------------
+    let loadingTimeout = null;
+
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+
+      if (msg.type === "loading-start") {
+        const loaderHTML = `
+          <div class="loading-state" style="opacity: 0; animation: fadeIn 0.2s ease-in forwards;">
+            <div class="spinner"></div>
+            <div>Scanning selection...</div>
+          </div>
+        `;
+        if (document.querySelector('.tab-btn[data-tab="bound"]').classList.contains('active')) {
+          mainContent.innerHTML = loaderHTML;
+        } else {
+          const unboundEmptyState = document.getElementById('unboundEmptyState');
+          const unboundListActions = document.getElementById('unboundListActions');
+          const unboundList = document.getElementById('unboundList');
+          if (unboundEmptyState) unboundEmptyState.style.display = "none";
+          if (unboundListActions) unboundListActions.style.display = "none";
+          if (unboundList) unboundList.innerHTML = loaderHTML;
+        }
+        return;
+      }
+
+      if (msg.type === "scan-result" || msg.type === "load-more-result") {
+        const activeEl = document.activeElement;
+        let focusedVarId = null;
+        let focusedModeId = null;
+        let selectionStart = null;
+        let selectionEnd = null;
+
+        if (activeEl && activeEl.classList.contains("mode-textarea")) {
+          focusedVarId = activeEl.dataset.varId;
+          focusedModeId = activeEl.dataset.modeId;
+          selectionStart = activeEl.selectionStart;
+          selectionEnd = activeEl.selectionEnd;
+        }
+
+        if (msg.type === "scan-result") {
+          currentVariables = msg.variables;
+          unboundNode = msg.unboundNode || null;
+          localCollections = msg.localCollections || [];
+          if (msg.lastCollectionId) lastCollectionId = msg.lastCollectionId;
+          
+          if (msg.unboundNodes) currentUnboundNodes = msg.unboundNodes;
+          if (msg.hasMoreUnbound !== undefined) hasMoreUnbound = msg.hasMoreUnbound;
+          if (msg.isSelectionEmpty !== undefined) isSelectionEmpty = msg.isSelectionEmpty;
+          if (msg.activeTab) switchTab(msg.activeTab, false);
+          if (msg.collectionFilter) collectionFilter.dataset.savedValue = msg.collectionFilter;
+          
+          if (msg.autoApply !== undefined) {
+            autoApplyToggle.checked = msg.autoApply;
+            const footer = document.querySelector(".footer");
+            if (msg.autoApply) {
+              footer.classList.add("auto-apply-on");
+            } else {
+              footer.classList.remove("auto-apply-on");
+            }
+          }
+          
+          if (msg.negativeList !== undefined) {
+            if (JSON.stringify(currentNegativeList) !== JSON.stringify(msg.negativeList)) {
+              currentNegativeList = msg.negativeList;
+              renderNegativeListPills();
+            }
+          }
+
+          dirtyValues.clear();
+          expandedCards.clear();
+          currentVariables.forEach(v => expandedCards.add(v.variableId));
+          
+          const toggleExpandBtn = document.getElementById("toggleExpandBtn");
+          toggleExpandBtn.dataset.state = "expanded";
+          toggleExpandBtn.title = "Collapse all";
+          document.getElementById("icon-collapse").style.display = "block";
+          document.getElementById("icon-expand").style.display = "none";
+        } else {
+          currentVariables = currentVariables.concat(msg.variables);
+          msg.variables.forEach(v => expandedCards.add(v.variableId));
+        }
+
+        hasMoreFromPlugin = msg.hasMore;
+        isLoadingMore = false;
+
+        const oldScrollTop = mainContent.scrollTop;
+
+        updateDropdownOptions();
+        renderContent();
+        
+        if (msg.type === "scan-result") {
+          mainContent.scrollTop = 0;
+        } else if (msg.type === "load-more-result" && msg.variables.length > 0) {
+          mainContent.scrollTop = oldScrollTop;
+          // Smooth scroll to the first new variable
+          const firstNewVarId = msg.variables[0].variableId;
+          const firstNewCard = document.querySelector(`.var-card[data-var-id="${firstNewVarId}"]`);
+          if (firstNewCard) {
+            firstNewCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+        
+        updateFooterState();
+        stopRefreshSpin();
+
+        // Restore focus
+        if (focusedVarId && focusedModeId) {
+          const taToFocus = document.querySelector(`.mode-textarea[data-var-id="${focusedVarId}"][data-mode-id="${focusedModeId}"]`);
+          if (taToFocus) {
+            taToFocus.focus();
+            if (selectionStart !== null && selectionEnd !== null) {
+              taToFocus.setSelectionRange(selectionStart, selectionEnd);
+            }
+          }
+        }
+      } else if (msg.type === "create-error") {
+        const createBindBtn = document.getElementById("createBindBtn");
+        if (createBindBtn) {
+          createBindBtn.textContent = "Create & Bind Variable";
+          createBindBtn.disabled = false;
+        }
+        const nameInput = document.getElementById("newVarName");
+        if (nameInput) {
+          nameInput.style.borderColor = "var(--danger)";
+          nameInput.style.backgroundColor = "rgba(242, 72, 34, 0.1)";
+          showToast(msg.message, true);
+          const resetError = () => {
+            nameInput.style.borderColor = "var(--border-focus)";
+            nameInput.style.backgroundColor = "var(--bg-input)";
+            nameInput.removeEventListener("input", resetError);
+          };
+          nameInput.addEventListener("input", resetError);
+        }
+      } else if (msg.type === "rename-error") {
+        const card = document.querySelector(`.var-card[data-var-id="${msg.variableId}"]`);
+        if (card) {
+          const nameInput = card.querySelector(".rename-input");
+          if (nameInput) {
+            nameInput.style.borderColor = "var(--danger)";
+            nameInput.style.backgroundColor = "rgba(242, 72, 34, 0.1)";
+            showToast(msg.message, true);
+            const resetError = () => {
+              nameInput.style.borderColor = "var(--border-focus)";
+              nameInput.style.backgroundColor = "var(--bg-input)";
+              nameInput.removeEventListener("input", resetError);
+            };
+            nameInput.addEventListener("input", resetError);
+          }
+        }
+      } else if (msg.type === "status") {
+        showToast(msg.message, true);
+      }
+    };
+
+    // -----------------------------------------------------------------------
+    // Tabs & Unbound Actions
+    // -----------------------------------------------------------------------
+    tabBtns.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tabId = btn.dataset.tab;
+        switchTab(tabId, true);
+      });
+    });
+
+    function switchTab(tabId, notifyPlugin = false) {
+      tabBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.tab === tabId));
+      
+      tabBtns.forEach(btn => {
+        if (btn.dataset.tab === tabId) {
+          btn.style.color = "var(--text-primary)";
+          btn.style.borderBottomColor = "var(--accent)";
+        } else {
+          btn.style.color = "var(--text-secondary)";
+          btn.style.borderBottomColor = "transparent";
+        }
+      });
+
+      tabContents.forEach(content => {
+        if (content.id === `tab${tabId.charAt(0).toUpperCase() + tabId.slice(1)}`) {
+          content.classList.add("active");
+          content.style.display = "flex";
+        } else {
+          content.classList.remove("active");
+          content.style.display = "none";
+        }
+      });
+      
+      if (notifyPlugin) {
+        parent.postMessage({ pluginMessage: { type: "switch-tab", tabId } }, "*");
+      }
+      
+      if (tabId === "unbound") {
+        renderUnboundContent();
+      }
+    }
+
+    scanAllUnboundBtn.addEventListener("click", () => {
+      scanAllUnboundBtn.textContent = "Scanning...";
+      scanAllUnboundBtn.disabled = true;
+      parent.postMessage({ pluginMessage: { type: "load-more-unbound" } }, "*");
+    });
+
+    function renderUnboundContent() {
+      unboundList.innerHTML = "";
+      
+      const listActions = document.getElementById("unboundListActions");
+      if (currentUnboundNodes.length === 0) {
+        unboundEmptyState.style.display = "flex";
+        scanAllUnboundBtn.style.display = "none";
+        if (listActions) listActions.style.display = "none";
+        
+        const emptyTitle = unboundEmptyState.querySelector(".empty-title");
+        if (emptyTitle) {
+          if (isSelectionEmpty) {
+            emptyTitle.textContent = "Select layers to find text labels not yet linked to variables";
+          } else {
+            emptyTitle.textContent = "No unbound text labels in selection";
+          }
+        }
+        return;
+      }
+      
+      unboundEmptyState.style.display = "none";
+      if (listActions) listActions.style.display = "flex";
+      scanAllUnboundBtn.style.display = hasMoreUnbound ? "block" : "none";
+      scanAllUnboundBtn.textContent = "Scan all labels (the rest)";
+      scanAllUnboundBtn.disabled = false;
+      
+      currentUnboundNodes.forEach(node => {
+        const item = document.createElement("div");
+        item.className = "var-card";
+        item.style.cursor = "pointer";
+        item.style.transition = "background var(--transition), border-color var(--transition)";
+        item.title = "Click to isolate this text node and create a variable";
+        
+        item.innerHTML = `
+          <div class="var-header" style="display: flex; justify-content: space-between; align-items: center; padding-right: 12px;">
+            <div class="var-name-wrap" style="flex: 1; overflow: hidden; pointer-events: none;">
+              <div class="var-icon">T</div>
+              <div class="var-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--text-secondary);">${escHtml(node.name)}</div>
+            </div>
+            <a class="ignore-link" style="font-size: 11px; color: var(--accent); text-decoration: none; font-weight: 500; cursor: pointer;">Ignore</a>
+          </div>
+          <div class="var-body" style="padding: 0 12px 12px 12px; pointer-events: none;">
+            <div style="font-size: 12px; color: var(--text-primary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+              ${escHtml(node.text)}
+            </div>
+          </div>
+        `;
+        
+        item.addEventListener("mouseenter", () => {
+          item.style.background = "var(--bg-hover)";
+          item.style.borderColor = "var(--border-focus)";
+        });
+        item.addEventListener("mouseleave", () => {
+          item.style.background = "var(--bg-card)";
+          item.style.borderColor = "var(--border)";
+        });
+        
+        item.addEventListener("click", () => {
+          parent.postMessage({ pluginMessage: { type: "select-node", nodeId: node.id } }, "*");
+        });
+        
+        const ignoreLink = item.querySelector(".ignore-link");
+        if (ignoreLink) {
+          ignoreLink.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (!currentNegativeList.includes(node.name)) {
+              currentNegativeList.push(node.name);
+              renderNegativeListPills();
+              parent.postMessage({ pluginMessage: { type: "update-negative-list", list: currentNegativeList } }, "*");
+            }
+          });
+        }
+        
+        unboundList.appendChild(item);
+      });
+    }
+
+    // -----------------------------------------------------------------------
+    // Top Header Actions
+    // -----------------------------------------------------------------------
+    collectionFilter.addEventListener("change", () => {
+      parent.postMessage({ pluginMessage: { type: "update-collection-filter", filter: collectionFilter.value } }, "*");
+      renderContent();
+    });
+    searchInput.addEventListener("input", () => {
+      renderContent();
+    });
+
+    const negativeListInput = document.getElementById("negativeListInput");
+    const negativeListPills = document.getElementById("negativeListPills");
+    
+    function renderNegativeListPills() {
+      if (!negativeListPills) return;
+      negativeListPills.innerHTML = "";
+      currentNegativeList.forEach(name => {
+        const pill = document.createElement("div");
+        pill.className = "pill";
+        pill.innerHTML = `
+          <span>${escHtml(name)}</span>
+          <div class="remove-btn" title="Remove">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" width="10" height="10">
+              <line x1="4" y1="4" x2="12" y2="12" />
+              <line x1="4" y1="12" x2="12" y2="4" />
+            </svg>
+          </div>
+        `;
+        pill.querySelector(".remove-btn").addEventListener("click", () => {
+          currentNegativeList = currentNegativeList.filter(n => n !== name);
+          renderNegativeListPills();
+          parent.postMessage({ pluginMessage: { type: "update-negative-list", list: currentNegativeList } }, "*");
+        });
+        negativeListPills.appendChild(pill);
+      });
+    }
+
+    if (negativeListInput) {
+      negativeListInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const val = negativeListInput.value.trim();
+          if (val && !currentNegativeList.includes(val)) {
+            currentNegativeList.push(val);
+            renderNegativeListPills();
+            parent.postMessage({ pluginMessage: { type: "update-negative-list", list: currentNegativeList } }, "*");
+          }
+          negativeListInput.value = "";
+        }
+      });
+    }
+
+    const selectAllUnboundBtn = document.getElementById("selectAllUnboundBtn");
+    if (selectAllUnboundBtn) {
+      selectAllUnboundBtn.addEventListener("click", () => {
+        if (currentUnboundNodes.length > 0) {
+          parent.postMessage({ 
+            pluginMessage: { 
+              type: "select-multiple-nodes", 
+              nodeIds: currentUnboundNodes.map(n => n.id) 
+            } 
+          }, "*");
+        }
+      });
+    }
+    
+    const clearNegativeListBtn = document.getElementById("clearNegativeListBtn");
+    if (clearNegativeListBtn) {
+      clearNegativeListBtn.addEventListener("click", () => {
+        if (currentNegativeList.length > 0) {
+          currentNegativeList = [];
+          renderNegativeListPills();
+          parent.postMessage({ pluginMessage: { type: "update-negative-list", list: currentNegativeList } }, "*");
+        }
+      });
+    }
+
+    const ignoreAllUnboundBtn = document.getElementById("ignoreAllUnboundBtn");
+    if (ignoreAllUnboundBtn) {
+      ignoreAllUnboundBtn.addEventListener("click", () => {
+        if (currentUnboundNodes.length > 0) {
+          let added = false;
+          currentUnboundNodes.forEach(node => {
+            if (!currentNegativeList.includes(node.name)) {
+              currentNegativeList.push(node.name);
+              added = true;
+            }
+          });
+          if (added) {
+            renderNegativeListPills();
+            parent.postMessage({ pluginMessage: { type: "update-negative-list", list: currentNegativeList } }, "*");
+          }
+        }
+      });
+    }
+
+    toggleExpandBtn.addEventListener("click", () => {
+      const isExpanded = toggleExpandBtn.dataset.state === "expanded";
+      if (isExpanded) {
+        toggleExpandBtn.dataset.state = "collapsed";
+        toggleExpandBtn.title = "Expand all";
+        document.getElementById("icon-collapse").style.display = "none";
+        document.getElementById("icon-expand").style.display = "block";
+        expandedCards.clear();
+      } else {
+        toggleExpandBtn.dataset.state = "expanded";
+        toggleExpandBtn.title = "Collapse all";
+        document.getElementById("icon-collapse").style.display = "block";
+        document.getElementById("icon-expand").style.display = "none";
+        currentVariables.forEach(v => expandedCards.add(v.variableId));
+      }
+      
+      // Animate by toggling classes instead of re-rendering everything
+      document.querySelectorAll(".var-card").forEach(card => {
+        const chevron = card.querySelector(".chevron");
+        if (isExpanded) {
+          card.classList.add("collapsed");
+          if (chevron) chevron.title = "Expand variable";
+        } else {
+          card.classList.remove("collapsed");
+          if (chevron) chevron.title = "Collapse variable";
+          card.querySelectorAll(".mode-textarea").forEach(ta => autoHeight(ta, ta.value));
+        }
+      });
+
+      document.querySelectorAll(".collection-header").forEach(header => {
+        header.title = isExpanded ? "Expand collection" : "Collapse collection";
+        header.querySelector("svg").style.transform = isExpanded ? "rotate(0)" : "rotate(180deg)";
+      });
+    });
+
+    function updateDropdownOptions() {
+      const currentVal = collectionFilter.value;
+      collectionFilter.innerHTML = `
+        <option value="all">All collections</option>
+        <option value="local">Local collections only</option>
+        <option disabled>──────────</option>
+      `;
+      const uniqueCollections = [...new Set(currentVariables.map(v => v.collectionName))];
+      
+      const targetVal = collectionFilter.dataset.savedValue || currentVal;
+      if (collectionFilter.dataset.savedValue) {
+        collectionFilter.dataset.savedValue = "";
+      }
+
+      if (targetVal !== "all" && targetVal !== "local" && !uniqueCollections.includes(targetVal)) {
+        uniqueCollections.push(targetVal);
+      }
+
+      uniqueCollections.sort((a, b) => a.localeCompare(b));
+      uniqueCollections.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c;
+        opt.textContent = c;
+        collectionFilter.appendChild(opt);
+      });
+      
+      if (collectionFilter.querySelector(`option[value="${targetVal}"]`)) {
+        collectionFilter.value = targetVal;
+      } else {
+        collectionFilter.value = "all";
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Render
+    // -----------------------------------------------------------------------
+    function renderContent() {
+      mainContent.innerHTML = "";
+
+      const filterVal = collectionFilter.value;
+      const searchQuery = searchInput.value.toLowerCase().trim();
+
+      if (unboundNode && localCollections.length > 0) {
+        const section = document.createElement("div");
+        section.className = "unbound-section";
+        section.innerHTML = `
+          <div style="display: flex; flex-direction: column; margin-bottom: 24px; text-align: left; align-items: flex-start; padding: 16px; background: var(--bg-secondary); border-radius: 6px; border: 1px solid var(--border);">
+            <div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px;">New Variable</div>
+            
+            <div style="display: flex; gap: 8px; flex-direction: column; width: 100%;">
+              <label style="font-size: 11px; font-weight: 500;">Collection</label>
+              <select id="newVarCollection" class="select-dropdown" style="width: 100%; margin-bottom: 4px;">
+                ${localCollections.map(c => `<option value="${c.id}" ${c.id === lastCollectionId ? "selected" : ""}>${escHtml(c.name)}</option>`).join("")}
+              </select>
+              
+              <label style="font-size: 11px; font-weight: 500;">Variable Name</label>
+              <input type="text" id="newVarName" class="rename-input" style="width: 100%; margin-right: 0; padding: 6px 8px; font-size: 11.5px; height: 28px; margin-bottom: 8px;" placeholder="Leave blank to use layer name">
+
+              <div id="newVarModes" style="display: flex; flex-direction: column; gap: 8px; width: 100%; margin-bottom: 8px;"></div>
+              
+              <button id="createBindBtn" class="btn-primary" style="margin-top: 12px; align-self: flex-start;">Create & Bind Variable</button>
+            </div>
+          </div>
+        `;
+        
+        mainContent.appendChild(section);
+
+        const collectionSelect = section.querySelector("#newVarCollection");
+        const modesContainer = section.querySelector("#newVarModes");
+        
+        const renderModes = () => {
+          const collectionId = collectionSelect.value;
+          const col = localCollections.find(c => c.id === collectionId);
+          modesContainer.innerHTML = "";
+          if (col && col.modes) {
+            col.modes.forEach(mode => {
+              const row = document.createElement("div");
+              row.className = "mode-row";
+              row.innerHTML = `
+                <div class="mode-label" style="font-size: 11px; margin-bottom: 4px; display: flex; justify-content: space-between;">
+                  <span>${escHtml(mode.name)}</span>
+                  <span style="color: var(--text-muted); font-size: 10px;">(Leave blank to auto-translate)</span>
+                </div>
+                <textarea class="mode-textarea create-mode-input" data-mode-id="${mode.modeId}" data-mode-name="${escHtml(mode.name)}" style="min-height: 28px; height: 28px; padding: 5px 8px; margin-bottom: 0;" placeholder="Text for ${escHtml(mode.name)}"></textarea>
+              `;
+              modesContainer.appendChild(row);
+            });
+            modesContainer.querySelectorAll("textarea").forEach(ta => {
+              ta.addEventListener("input", () => {
+                ta.style.height = "28px"; // Reset to min height first to calculate correctly if text was deleted
+                ta.style.height = ta.scrollHeight + "px";
+              });
+            });
+          }
+        };
+
+        collectionSelect.addEventListener("change", renderModes);
+        renderModes();
+
+        const createBindBtn = section.querySelector("#createBindBtn");
+        createBindBtn.onclick = async () => {
+          let name = section.querySelector("#newVarName").value.trim();
+          if (!name) name = unboundNode.name;
+          
+          const collectionId = collectionSelect.value;
+          
+          createBindBtn.textContent = "Processing...";
+          createBindBtn.disabled = true;
+
+          const inputs = Array.from(modesContainer.querySelectorAll(".create-mode-input"));
+          const filledInput = inputs.find(i => i.value.trim() !== "");
+          
+          const modeValues = {};
+          
+          if (!filledInput) {
+            // All blank, use raw text
+            inputs.forEach(i => {
+              modeValues[i.dataset.modeId] = unboundNode.text;
+            });
+          } else {
+            const sourceText = filledInput.value.trim();
+            for (const input of inputs) {
+              if (input.value.trim() !== "") {
+                modeValues[input.dataset.modeId] = input.value.trim();
+              } else {
+                try {
+                  const targetLang = input.dataset.modeName.toLowerCase().trim();
+                  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(targetLang)}&dt=t&q=${encodeURIComponent(sourceText)}`;
+                  const res = await fetch(url);
+                  const json = await res.json();
+                  if (json && json[0] && json[0][0] && json[0][0][0]) {
+                    modeValues[input.dataset.modeId] = json[0][0][0];
+                  } else {
+                    modeValues[input.dataset.modeId] = sourceText;
+                  }
+                } catch (e) {
+                  console.error("Translation failed", e);
+                  modeValues[input.dataset.modeId] = sourceText;
+                }
+              }
+            }
+          }
+
+          createBindBtn.textContent = "Creating...";
+
+          parent.postMessage({
+            pluginMessage: {
+              type: "create-bind-variable",
+              nodeId: unboundNode.id,
+              collectionId: collectionId,
+              variableName: name,
+              modeValues: modeValues
+            }
+          }, "*");
+        };
+      }
+
+      let filteredVariables = currentVariables.filter(v => {
+        if (filterVal === "local" && v.isRemote) return false;
+        if (filterVal !== "all" && filterVal !== "local" && v.collectionName !== filterVal) return false;
+        
+        if (searchQuery) {
+          if (!v.variableName.toLowerCase().includes(searchQuery)) {
+            return false;
+          }
+        }
+        
+        return true;
+      });
+
+      if (filteredVariables.length === 0) {
+        if (!unboundNode) {
+          renderEmptyState();
+        }
+        return;
+      }
+
+      // Group by collection name
+      const collections = new Map();
+      for (const v of filteredVariables) {
+        if (!collections.has(v.collectionName)) {
+          collections.set(v.collectionName, []);
+        }
+        collections.get(v.collectionName).push(v);
+      }
+
+      const sortedCollectionNames = [...collections.keys()].sort((a, b) => a.localeCompare(b));
+
+      // Render sections
+      for (const colName of sortedCollectionNames) {
+        const vars = collections.get(colName);
+        const section = document.createElement("div");
+
+        // A collection is considered collapsed if ALL its variables are collapsed
+        let allCollapsed = true;
+        for (const v of vars) {
+          if (expandedCards.has(v.variableId)) {
+            allCollapsed = false;
+            break;
+          }
+        }
+        let isCollapsed = allCollapsed;
+
+        const header = document.createElement("div");
+        header.className = "collection-header";
+        header.style.cursor = "pointer";
+        header.title = isCollapsed ? "Expand collection" : "Collapse collection";
+        header.innerHTML = `
+          <span>${escHtml(colName)}</span>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16" style="transition: transform 0.2s; transform: ${isCollapsed ? 'rotate(0)' : 'rotate(180deg)'};">
+            <polyline points="3 6 8 11 13 6" />
+          </svg>
+        `;
+        section.appendChild(header);
+
+        const list = document.createElement("div");
+        list.className = "variable-list";
+        for (const v of vars) {
+          list.appendChild(buildCard(v));
+        }
+        section.appendChild(list);
+
+        header.addEventListener("click", () => {
+          if (isCollapsed) {
+            // Expand all
+            header.title = "Collapse collection";
+            header.querySelector("svg").style.transform = "rotate(180deg)";
+            for (const v of vars) {
+              expandedCards.add(v.variableId);
+            }
+            const cards = list.querySelectorAll(".var-card");
+            cards.forEach(card => {
+              card.classList.remove("collapsed");
+              const chevron = card.querySelector(".chevron");
+              if (chevron) chevron.title = "Collapse variable";
+              card.querySelectorAll(".mode-textarea").forEach(ta => autoHeight(ta, ta.value));
+            });
+            isCollapsed = false;
+          } else {
+            // Collapse all
+            header.title = "Expand collection";
+            header.querySelector("svg").style.transform = "rotate(0)";
+            for (const v of vars) {
+              expandedCards.delete(v.variableId);
+            }
+            const cards = list.querySelectorAll(".var-card");
+            cards.forEach(card => {
+              card.classList.add("collapsed");
+              const chevron = card.querySelector(".chevron");
+              if (chevron) chevron.title = "Expand variable";
+            });
+            isCollapsed = true;
+          }
+        });
+
+        mainContent.appendChild(section);
+      }
+
+      if (hasMoreFromPlugin) {
+        const loadMoreBtn = document.createElement("button");
+        loadMoreBtn.className = "load-more-btn";
+        loadMoreBtn.textContent = isLoadingMore ? "Loading..." : "Load more variables...";
+        loadMoreBtn.disabled = isLoadingMore;
+        loadMoreBtn.addEventListener("click", () => {
+          if (isLoadingMore) return;
+          isLoadingMore = true;
+          loadMoreBtn.textContent = "Loading...";
+          loadMoreBtn.disabled = true;
+          parent.postMessage({ pluginMessage: { type: "load-more" } }, "*");
+        });
+        mainContent.appendChild(loadMoreBtn);
+      }
+
+      // Now that elements are in the DOM, we can accurately measure scrollHeight for word-wrapped text
+      const allTextareas = mainContent.querySelectorAll(".mode-textarea");
+      allTextareas.forEach(ta => autoHeight(ta, ta.value));
+    }
+
+    function renderEmptyState() {
+      mainContent.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="3"/>
+              <path d="M9 12h6M9 8h6M9 16h3"/>
+            </svg>
+          </div>
+          <div class="empty-title">Select a text layer bound to string variables</div>
+        </div>
+      `;
+    }
+
+    function buildCard(variable) {
+      const card = document.createElement("div");
+      const isExpanded = expandedCards.has(variable.variableId);
+      card.className = "var-card" + (isExpanded ? "" : " collapsed"); // Maintain expanded state across renders
+      card.dataset.varId = variable.variableId;
+
+      // Check if this variable is dirty
+      const isDirty = [...dirtyValues.keys()].some(k => k.startsWith(`${variable.variableId}::`));
+      const dotOpacity = isDirty ? "1" : "0";
+
+      // Header
+      const header = document.createElement("div");
+      header.className = "var-header";
+      header.innerHTML = `
+        <div class="var-icon">T</div>
+        <div class="var-name-wrap">
+          <div class="var-name" title="${escHtml(variable.variableName)}">${escHtml(variable.variableName)}</div>
+          <div class="dirty-dot" id="dot-${escHtml(variable.variableId)}" style="opacity: ${dotOpacity}"></div>
+        </div>
+        <div class="var-header-right">
+          <button class="icon-btn copy-var-btn" title="Copy variable name">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <rect x="5" y="5" width="8" height="8" rx="1.5"/>
+              <path d="M4 11H3.5a1.5 1.5 0 01-1.5-1.5V3.5A1.5 1.5 0 013.5 2h6A1.5 1.5 0 0111 3.5V4"/>
+            </svg>
+          </button>
+          ${!variable.isRemote ? `
+          <button class="icon-btn edit-var-btn" title="Rename variable">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M11 3.5l1.5 1.5-7.5 7.5-2.5 1 1-2.5 7.5-7.5z"/>
+            </svg>
+          </button>
+          ` : ""}
+          <span class="chevron" title="${isExpanded ? 'Collapse variable' : 'Expand variable'}">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="4 6 8 10 12 6"/>
+            </svg>
+          </span>
+        </div>
+      `;
+
+      // Body
+      const bodyWrapper = document.createElement("div");
+      bodyWrapper.className = "var-body-wrapper";
+
+      const body = document.createElement("div");
+      body.className = "var-body";
+
+      const bodyInner = document.createElement("div");
+      bodyInner.className = "var-body-inner";
+
+      // One row per mode
+      for (const mode of variable.modes) {
+        const row = document.createElement("div");
+        row.className = "mode-row";
+
+        const label = document.createElement("div");
+        label.className = "mode-label";
+        label.textContent = mode.modeName;
+
+        const ta = document.createElement("textarea");
+        ta.className = "mode-textarea";
+        ta.rows = 1;
+        
+        const key = `${variable.variableId}::${mode.modeId}`;
+        const hasDirty = dirtyValues.has(key);
+        
+        ta.value = hasDirty ? dirtyValues.get(key) : mode.value;
+        if (hasDirty) ta.classList.add("changed");
+        
+        ta.dataset.varId = variable.variableId;
+        ta.dataset.modeId = mode.modeId;
+        ta.setAttribute("spellcheck", "false");
+        ta.placeholder = "Missing value...";
+
+        if (ta.value.trim() === "") {
+          ta.classList.add("empty");
+        }
+
+        if (variable.isRemote) {
+          ta.readOnly = true;
+          ta.title = "This variable is from a published library and cannot be edited locally.";
+        } else {
+          ta.addEventListener("input", () => {
+            onTextareaChange(ta, variable.variableId, mode.modeId, mode.value);
+            autoHeight(ta, ta.value);
+          });
+        }
+
+        row.appendChild(label);
+        row.appendChild(ta);
+        bodyInner.appendChild(row);
+      }
+
+      let deleteRow = null;
+      if (!variable.isRemote) {
+        deleteRow = document.createElement("div");
+        deleteRow.style = "margin-top: 8px; display: none; align-items: center; gap: 8px;";
+        
+        const deleteLink = document.createElement("span");
+        deleteLink.className = "delete-link";
+        deleteLink.textContent = "Delete Variable";
+        deleteLink.style = "color: var(--danger); font-size: 11px; cursor: pointer; display: inline-block; transition: opacity 150ms;";
+
+        const confirmWrap = document.createElement("span");
+        confirmWrap.className = "confirm-wrap";
+        confirmWrap.style = "display: none; align-items: center; gap: 4px; font-size: 11px;";
+
+        const cancelBtn = document.createElement("span");
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.style = "color: var(--text-secondary); cursor: pointer;";
+        cancelBtn.style.transition = "color 150ms";
+
+        const sep = document.createElement("span");
+        sep.textContent = "|";
+        sep.style = "color: var(--text-muted);";
+
+        const confirmBtn = document.createElement("span");
+        confirmBtn.textContent = "Delete";
+        confirmBtn.style = "color: var(--danger); cursor: pointer; font-weight: 600;";
+        confirmBtn.style.transition = "color 150ms";
+
+        confirmWrap.appendChild(cancelBtn);
+        confirmWrap.appendChild(sep);
+        confirmWrap.appendChild(confirmBtn);
+
+        const enterConfirmMode = () => {
+          deleteLink.style.opacity = "0.35";
+          deleteLink.style.pointerEvents = "none";
+          confirmWrap.style.display = "inline-flex";
+        };
+        const exitConfirmMode = () => {
+          deleteLink.style.opacity = "1";
+          deleteLink.style.pointerEvents = "auto";
+          confirmWrap.style.display = "none";
+        };
+
+        deleteLink.addEventListener("mousedown", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          enterConfirmMode();
+        });
+
+        cancelBtn.addEventListener("mousedown", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          exitConfirmMode();
+        });
+
+        confirmBtn.addEventListener("mousedown", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          showToast("Deleting...");
+          parent.postMessage({ pluginMessage: { type: "delete-variable", variableId: variable.variableId } }, "*");
+        });
+
+        deleteRow.appendChild(deleteLink);
+        deleteRow.appendChild(confirmWrap);
+        bodyInner.appendChild(deleteRow);
+      }
+
+      body.appendChild(bodyInner);
+      bodyWrapper.appendChild(body);
+      
+      card.appendChild(header);
+      card.appendChild(bodyWrapper);
+
+      // Interactions
+      const copyBtn = card.querySelector(".copy-var-btn");
+      if (copyBtn) {
+        copyBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const textArea = document.createElement("textarea");
+          textArea.value = variable.variableName;
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand("copy");
+          document.body.removeChild(textArea);
+          showToast('Copied "' + variable.variableName + '"');
+        });
+      }
+
+      if (!variable.isRemote) {
+        const editBtn = header.querySelector(".edit-var-btn");
+        if (editBtn) {
+          editBtn.onclick = (e) => {
+            e.stopPropagation(); // prevent card collapse
+            
+            const nameWrap = header.querySelector(".var-name-wrap");
+            const nameDiv = nameWrap.querySelector(".var-name");
+            const dirtyDot = nameWrap.querySelector(".dirty-dot");
+            
+            nameDiv.style.display = "none";
+            if (dirtyDot) dirtyDot.style.display = "none";
+            editBtn.style.display = "none";
+            if (deleteRow) deleteRow.style.display = "flex";
+            
+            const input = document.createElement("input");
+            input.type = "text";
+            input.value = variable.variableName;
+            input.className = "rename-input";
+            
+            const submitRename = () => {
+              const newName = input.value.trim();
+              if (newName && newName !== variable.variableName) {
+                parent.postMessage({
+                  pluginMessage: {
+                    type: "rename-variable",
+                    variableId: variable.variableId,
+                    newName: newName
+                  }
+                }, "*");
+              } else {
+                input.remove();
+                nameDiv.style.display = "";
+                if (dirtyDot) dirtyDot.style.display = "";
+                editBtn.style.display = "";
+                if (deleteRow) {
+                  deleteRow.style.display = "none";
+                  const cWrap = deleteRow.querySelector(".confirm-wrap");
+                  const dLink = deleteRow.querySelector(".delete-link");
+                  if (cWrap && dLink) {
+                    dLink.style.opacity = "1";
+                    dLink.style.pointerEvents = "auto";
+                    cWrap.style.display = "none";
+                  }
+                }
+              }
+            };
+
+            input.onblur = submitRename;
+            input.onkeydown = (ev) => {
+              ev.stopPropagation(); // prevent other hotkeys
+              if (ev.key === "Enter") {
+                input.blur();
+              } else if (ev.key === "Escape") {
+                input.value = variable.variableName; // Revert
+                input.blur();
+              }
+            };
+            
+            nameWrap.insertBefore(input, nameDiv);
+            input.focus();
+            input.select();
+          };
+        }
+      }
+      const chevron = header.querySelector(".chevron");
+      if (chevron) {
+        chevron.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const isCollapsed = card.classList.toggle("collapsed");
+          if (!isCollapsed) {
+            expandedCards.add(variable.variableId);
+            chevron.title = "Collapse variable";
+            // Trigger height recalculation when expanded
+            card.querySelectorAll(".mode-textarea").forEach(ta => autoHeight(ta, ta.value));
+          } else {
+            expandedCards.delete(variable.variableId);
+            chevron.title = "Expand variable";
+          }
+        });
+      }
+
+      return card;
+    }
+
+    // -----------------------------------------------------------------------
+    // Interaction logic
+    // -----------------------------------------------------------------------
+    function autoHeight(ta, text) {
+      ta.style.height = "1px";
+      const lines = (text.match(/\n/g) || []).length + 1;
+      const minH = lines <= 1 ? 36 : Math.min(lines * 18 + 18, 160);
+      ta.style.height = `${Math.max(minH, ta.scrollHeight + 2)}px`;
+    }
+
+    function onTextareaChange(textarea, variableId, modeId, originalValue) {
+      const key = `${variableId}::${modeId}`;
+      if (textarea.value !== originalValue) {
+        dirtyValues.set(key, textarea.value);
+        textarea.classList.add("changed");
+      } else {
+        dirtyValues.delete(key);
+        textarea.classList.remove("changed");
+      }
+
+      if (textarea.value.trim() === "") {
+        textarea.classList.add("empty");
+      } else {
+        textarea.classList.remove("empty");
+      }
+      
+      updateCardDirtyState(variableId);
+      updateFooterState();
+
+      if (autoApplyToggle.checked) {
+        clearTimeout(autoApplyTimeout);
+        autoApplyTimeout = setTimeout(() => {
+          triggerAutoApply();
+        }, 400);
+      }
+    }
+
+    let autoApplyTimeout = null;
+
+    function triggerAutoApply() {
+      if (dirtyValues.size === 0) return;
+      const updates = [];
+      for (const [key, value] of dirtyValues.entries()) {
+        const [variableId, modeId] = key.split("::");
+        updates.push({ variableId, modeId, value });
+        
+        // Update local memory so we don't revert if auto-apply is on
+        const variable = currentVariables.find(v => v.variableId === variableId);
+        if (variable) {
+          const mode = variable.modes.find(m => m.modeId === modeId);
+          if (mode) mode.value = value;
+        }
+      }
+      
+      dirtyValues.clear();
+      document.querySelectorAll(".dirty-dot").forEach(el => el.style.opacity = "0");
+      document.querySelectorAll(".mode-textarea.changed").forEach(el => el.classList.remove("changed"));
+      updateFooterState();
+      
+      parent.postMessage({ pluginMessage: { type: "apply-multiple", updates, skipScan: true } }, "*");
+    }
+
+    function updateCardDirtyState(variableId) {
+      const isDirty = [...dirtyValues.keys()].some(k => k.startsWith(`${variableId}::`));
+      const dot = document.getElementById(`dot-${variableId}`);
+      if (dot) {
+        dot.style.opacity = isDirty ? "1" : "0";
+      }
+    }
+
+    function updateFooterState() {
+      const hasChanges = dirtyValues.size > 0;
+      applyBtn.disabled = !hasChanges;
+      undoBtn.disabled = !hasChanges;
+    }
+
+    // -----------------------------------------------------------------------
+    // Footer actions
+    // -----------------------------------------------------------------------
+    autoApplyToggle.addEventListener("change", () => {
+      const footer = document.querySelector(".footer");
+      if (autoApplyToggle.checked) {
+        footer.classList.add("auto-apply-on");
+        triggerAutoApply(); // immediately apply pending
+      } else {
+        footer.classList.remove("auto-apply-on");
+      }
+      parent.postMessage({ pluginMessage: { type: "update-auto-apply", value: autoApplyToggle.checked } }, "*");
+    });
+
+    applyBtn.addEventListener("click", () => {
+      if (dirtyValues.size === 0) return;
+
+      const updates = [];
+      for (const [key, value] of dirtyValues.entries()) {
+        const [variableId, modeId] = key.split("::");
+        updates.push({ variableId, modeId, value });
+      }
+
+      // Optimistically clean UI
+      dirtyValues.clear();
+      document.querySelectorAll(".dirty-dot").forEach(el => el.style.opacity = "0");
+      document.querySelectorAll(".mode-textarea.changed").forEach(el => el.classList.remove("changed"));
+      updateFooterState();
+
+      parent.postMessage({ pluginMessage: { type: "apply-multiple", updates } }, "*");
+      showToast("Changes applied successfully.");
+    });
+
+    undoBtn.addEventListener("click", () => {
+      document.querySelectorAll(".mode-textarea").forEach(el => {
+        const varId = el.dataset.varId;
+        const modeId = el.dataset.modeId;
+        const variable = currentVariables.find(v => v.variableId === varId);
+        if (variable) {
+          const mode = variable.modes.find(m => m.modeId === modeId);
+          if (mode) {
+            el.value = mode.value;
+            el.classList.remove("changed");
+            autoHeight(el, el.value);
+          }
+        }
+      });
+      dirtyValues.clear();
+      document.querySelectorAll(".dirty-dot").forEach(el => el.style.opacity = "0");
+      updateFooterState();
+    });
+
+    refreshBtn.addEventListener("click", () => {
+      refreshIcon.classList.add("spinning");
+      refreshBtn.disabled = true;
+      parent.postMessage({ pluginMessage: { type: "refresh" } }, "*");
+    });
+
+    function stopRefreshSpin() {
+      refreshIcon.classList.remove("spinning");
+      refreshBtn.disabled = false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Utilities
+    // -----------------------------------------------------------------------
+    let toastTimer = 0;
+    function showToast(message, isError = false) {
+      toastMsg.textContent = message;
+      toast.classList.toggle("error", isError);
+      toast.classList.add("visible");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("visible"), 2800);
+    }
+
+    function escHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    // -----------------------------------------------------------------------
+    // Resize Handle Logic
+    // -----------------------------------------------------------------------
+    const resizeHandle = document.getElementById("resizeHandle");
+    let isResizing = false;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    resizeHandle.addEventListener("pointerdown", (e) => {
+      isResizing = true;
+      offsetX = window.innerWidth - e.clientX;
+      offsetY = window.innerHeight - e.clientY;
+      document.body.style.userSelect = "none";
+      try { resizeHandle.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+
+    window.addEventListener("pointermove", (e) => {
+      if (!isResizing) return;
+      
+      let newW = Math.round(e.clientX + offsetX);
+      let newH = Math.round(e.clientY + offsetY);
+      
+      if (newW < 400) newW = 400;
+      if (newH < 300) newH = 300;
+
+      parent.postMessage({ pluginMessage: { type: "resize", width: newW, height: newH } }, "*");
+    });
+
+    const stopResize = (e) => {
+      if (!isResizing) return;
+      isResizing = false;
+      document.body.style.userSelect = "";
+      try { resizeHandle.releasePointerCapture(e.pointerId); } catch (err) {}
+      
+      parent.postMessage({ pluginMessage: { type: "save-resize", width: window.innerWidth, height: window.innerHeight } }, "*");
+    };
+
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+
+    // Enforce minimum window dimensions on native resize
+    window.addEventListener("resize", () => {
+      if (isResizing) return; // Ignore if we are driving the resize
+      let w = window.innerWidth;
+      let h = window.innerHeight;
+      let changed = false;
+      if (w < 400) { w = 400; changed = true; }
+      if (h < 300) { h = 300; changed = true; }
+      if (changed) {
+        parent.postMessage({ pluginMessage: { type: "resize", width: w, height: h } }, "*");
+      }
+    });
+  </script>
+</body>
+</html>
