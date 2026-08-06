@@ -14,6 +14,7 @@
 // Plugin entry point
 // ---------------------------------------------------------------------------
 let lastCollectionId;
+let defaultCollectionId;
 let activeTab = "bound";
 let scanAllUnbound = false;
 let collectionFilterVal;
@@ -26,6 +27,7 @@ async function initPlugin() {
     const savedNegativeList = await figma.clientStorage.getAsync("negativeList");
     const savedCollectionFilter = await figma.clientStorage.getAsync("collectionFilter");
     const savedAutoApply = await figma.clientStorage.getAsync("autoApply");
+    const savedDefaultCollectionId = await figma.clientStorage.getAsync("defaultCollectionId");
     if (savedActiveTab === "bound" || savedActiveTab === "unbound") {
         activeTab = savedActiveTab;
     }
@@ -37,6 +39,9 @@ async function initPlugin() {
     }
     if (typeof savedAutoApply === "boolean") {
         autoApplyVal = savedAutoApply;
+    }
+    if (typeof savedDefaultCollectionId === "string") {
+        defaultCollectionId = savedDefaultCollectionId;
     }
     figma.showUI(__html__, {
         width,
@@ -122,6 +127,11 @@ figma.ui.onmessage = async (rawMsg) => {
     if (msg.type === "update-auto-apply") {
         autoApplyVal = msg.value;
         await figma.clientStorage.setAsync("autoApply", autoApplyVal);
+        return;
+    }
+    if (msg.type === "update-default-collection") {
+        defaultCollectionId = msg.collectionId;
+        await figma.clientStorage.setAsync("defaultCollectionId", defaultCollectionId);
         return;
     }
     if (msg.type === "apply-multiple") {
@@ -258,9 +268,15 @@ async function yieldIfNeeded() {
 }
 async function scanSelection() {
     const selection = figma.currentPage.selection;
+    const collections = await figma.variables.getLocalVariableCollectionsAsync();
+    activeLocalCollections = collections.map(c => ({
+        id: c.id,
+        name: c.name,
+        modes: c.modes.map(m => ({ modeId: m.modeId, name: m.name }))
+    }));
     if (selection.length === 0) {
         activeVariableIds = [];
-        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal });
+        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCollectionId, localCollections: activeLocalCollections });
         return;
     }
     sendToUI({ type: "loading-start" });
@@ -271,7 +287,7 @@ async function scanSelection() {
     }
     if (textNodes.length === 0) {
         activeVariableIds = [];
-        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: false, collectionFilter: collectionFilterVal, autoApply: autoApplyVal });
+        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: false, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCollectionId, localCollections: activeLocalCollections });
         return;
     }
     const variableIds = new Set();
@@ -293,15 +309,8 @@ async function scanSelection() {
         }
     }
     activeUnboundNode = undefined;
-    activeLocalCollections = undefined;
     if (textNodes.length === 1 && variableIds.size === 0) {
         activeUnboundNode = allUnboundNodes[0];
-        const collections = await figma.variables.getLocalVariableCollectionsAsync();
-        activeLocalCollections = collections.map(c => ({
-            id: c.id,
-            name: c.name,
-            modes: c.modes.map(m => ({ modeId: m.modeId, name: m.name }))
-        }));
     }
     if (!scanAllUnbound && allUnboundNodes.length > 100) {
         activeUnboundNodesList = allUnboundNodes.slice(0, 100);
@@ -384,15 +393,16 @@ async function fetchAndSendNextBatch(isInitial) {
     if (isInitial) {
         if (activeUnboundNode) {
             payload.unboundNode = activeUnboundNode;
-            payload.localCollections = activeLocalCollections;
             payload.lastCollectionId = lastCollectionId;
         }
+        payload.localCollections = activeLocalCollections;
         payload.unboundNodes = activeUnboundNodesList;
         payload.hasMoreUnbound = hasMoreUnboundNodes;
         payload.activeTab = activeTab;
         payload.negativeList = negativeList;
         payload.isSelectionEmpty = false;
         payload.collectionFilter = collectionFilterVal;
+        payload.defaultCollectionId = defaultCollectionId;
         if (autoApplyVal !== undefined)
             payload.autoApply = autoApplyVal;
     }

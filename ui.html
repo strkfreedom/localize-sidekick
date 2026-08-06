@@ -712,6 +712,7 @@
   <div class="tabs-container" id="tabsContainer" style="display: flex; background: var(--bg-page); border-bottom: 1px solid var(--border); padding: 0 12px; flex-shrink: 0;">
     <button class="tab-btn active" data-tab="bound" style="background: transparent; border: none; color: var(--text-primary); padding: 10px 12px; font-size: 11px; font-weight: 500; cursor: pointer; border-bottom: 2px solid var(--accent); transition: color var(--transition), border-color var(--transition);">Variables</button>
     <button class="tab-btn" data-tab="unbound" style="background: transparent; border: none; color: var(--text-secondary); padding: 10px 12px; font-size: 11px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; transition: color var(--transition), border-color var(--transition);">Unbound Labels</button>
+    <button class="tab-btn" data-tab="settings" style="background: transparent; border: none; color: var(--text-secondary); padding: 10px 12px; font-size: 11px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; transition: color var(--transition), border-color var(--transition);">Settings</button>
   </div>
 
   <!-- =====================================================================
@@ -812,6 +813,21 @@
     </div>
   </div>
 
+  <!-- =====================================================================
+       TAB: SETTINGS
+  ====================================================================== -->
+  <div class="tab-content" id="tabSettings" style="display: none; flex: 1; flex-direction: column; overflow: hidden; background: var(--bg-page);">
+    <div style="padding: 20px 16px;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <label style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Default Collection</label>
+        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; line-height: 1.4;">Select the default collection for creating new variables and linking existing ones.</div>
+        <select id="defaultCollectionSelect" class="select-dropdown" style="width: 100%;">
+          <option value="">No default collection</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
   <!-- Resize Handle -->
   <svg id="resizeHandle" viewBox="0 0 16 16" fill="none">
     <path d="M14 8L8 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -844,6 +860,7 @@
     let unboundNode = null;
     let localCollections = [];
     let lastCollectionId = null;
+    let defaultCollectionId = null;
     let lastBoundVariableName = null;
     let currentUnboundNodes = [];
     let hasMoreUnbound = false;
@@ -869,6 +886,7 @@
     const collectionFilter = document.getElementById("collectionFilter");
     const searchInput = document.getElementById("searchInput");
     const toggleExpandBtn = document.getElementById("toggleExpandBtn");
+    const defaultCollectionSelect = document.getElementById("defaultCollectionSelect");
 
     let toastTimeout = null;
     function showToast(message, isError = false) {
@@ -931,8 +949,15 @@
         if (msg.type === "scan-result") {
           currentVariables = msg.variables;
           unboundNode = msg.unboundNode || null;
-          localCollections = msg.localCollections || [];
+          if (msg.localCollections) {
+            localCollections = msg.localCollections;
+            updateSettingsDropdown();
+          }
           if (msg.lastCollectionId) lastCollectionId = msg.lastCollectionId;
+          if (msg.defaultCollectionId !== undefined) {
+            defaultCollectionId = msg.defaultCollectionId;
+            updateSettingsDropdown();
+          }
           
           if (msg.unboundNodes) currentUnboundNodes = msg.unboundNodes;
           if (msg.hasMoreUnbound !== undefined) hasMoreUnbound = msg.hasMoreUnbound;
@@ -1167,14 +1192,35 @@
         unboundList.appendChild(item);
       });
     }
+    // -----------------------------------------------------------------------
+    // Actions & Event Listeners
+    // -----------------------------------------------------------------------
+    refreshBtn.addEventListener("click", () => {
+      parent.postMessage({ pluginMessage: { type: "refresh" } }, "*");
+    });
 
-    // -----------------------------------------------------------------------
-    // Top Header Actions
-    // -----------------------------------------------------------------------
     collectionFilter.addEventListener("change", () => {
       parent.postMessage({ pluginMessage: { type: "update-collection-filter", filter: collectionFilter.value } }, "*");
       renderContent();
     });
+
+    defaultCollectionSelect.addEventListener("change", () => {
+      parent.postMessage({ pluginMessage: { type: "update-default-collection", collectionId: defaultCollectionSelect.value } }, "*");
+    });
+
+    function updateSettingsDropdown() {
+      defaultCollectionSelect.innerHTML = `<option value="">No default collection</option>`;
+      localCollections.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = c.name;
+        if (c.id === defaultCollectionId) {
+          opt.selected = true;
+        }
+        defaultCollectionSelect.appendChild(opt);
+      });
+    }
+
     searchInput.addEventListener("input", () => {
       renderContent();
     });
@@ -1352,7 +1398,7 @@
             <div style="display: flex; gap: 8px; flex-direction: column; width: 100%;">
               <label style="font-size: 11px; font-weight: 500;">Collection</label>
               <select id="newVarCollection" class="select-dropdown" style="width: 100%; margin-bottom: 4px;">
-                ${localCollections.map(c => `<option value="${c.id}" ${c.id === lastCollectionId ? "selected" : ""}>${escHtml(c.name)}</option>`).join("")}
+                ${localCollections.map(c => `<option value="${c.id}" ${c.id === (defaultCollectionId || lastCollectionId) ? "selected" : ""}>${escHtml(c.name)}</option>`).join("")}
               </select>
               
               <label style="font-size: 11px; font-weight: 500;">Variable Name</label>

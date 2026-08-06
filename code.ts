@@ -52,6 +52,7 @@ interface ScanResult {
   unboundNode?: UnboundNodeInfo;
   localCollections?: CollectionInfo[];
   lastCollectionId?: string;
+  defaultCollectionId?: string;
   unboundNodes?: UnboundNodeInfo[];
   hasMoreUnbound?: boolean;
   activeTab?: "bound" | "unbound";
@@ -172,6 +173,11 @@ interface UpdateAutoApplyMessage {
   value: boolean;
 }
 
+interface UpdateDefaultCollectionMessage {
+  type: "update-default-collection";
+  collectionId: string;
+}
+
 type UIToPlugin =
   | RefreshMessage
   | CloseMessage
@@ -188,6 +194,7 @@ type UIToPlugin =
   | UpdateNegativeListMessage
   | UpdateCollectionFilterMessage
   | UpdateAutoApplyMessage
+  | UpdateDefaultCollectionMessage
   | ApplyMultipleMessage;
 
 // ---------------------------------------------------------------------------
@@ -195,6 +202,7 @@ type UIToPlugin =
 // ---------------------------------------------------------------------------
 
 let lastCollectionId: string | undefined;
+let defaultCollectionId: string | undefined;
 let activeTab: "bound" | "unbound" = "bound";
 let scanAllUnbound = false;
 let collectionFilterVal: string | undefined;
@@ -209,6 +217,7 @@ async function initPlugin() {
   const savedNegativeList = await figma.clientStorage.getAsync("negativeList");
   const savedCollectionFilter = await figma.clientStorage.getAsync("collectionFilter");
   const savedAutoApply = await figma.clientStorage.getAsync("autoApply");
+  const savedDefaultCollectionId = await figma.clientStorage.getAsync("defaultCollectionId");
   
   if (savedActiveTab === "bound" || savedActiveTab === "unbound") {
     activeTab = savedActiveTab;
@@ -221,6 +230,9 @@ async function initPlugin() {
   }
   if (typeof savedAutoApply === "boolean") {
     autoApplyVal = savedAutoApply;
+  }
+  if (typeof savedDefaultCollectionId === "string") {
+    defaultCollectionId = savedDefaultCollectionId;
   }
 
   figma.showUI(__html__, {
@@ -324,6 +336,12 @@ figma.ui.onmessage = async (rawMsg: unknown) => {
   if (msg.type === "update-auto-apply") {
     autoApplyVal = msg.value;
     await figma.clientStorage.setAsync("autoApply", autoApplyVal);
+    return;
+  }
+
+  if (msg.type === "update-default-collection") {
+    defaultCollectionId = msg.collectionId;
+    await figma.clientStorage.setAsync("defaultCollectionId", defaultCollectionId);
     return;
   }
 
@@ -467,9 +485,16 @@ async function yieldIfNeeded() {
 async function scanSelection() {
   const selection = figma.currentPage.selection;
 
+  const collections = await figma.variables.getLocalVariableCollectionsAsync();
+  activeLocalCollections = collections.map(c => ({
+    id: c.id,
+    name: c.name,
+    modes: c.modes.map(m => ({ modeId: m.modeId, name: m.name }))
+  }));
+
   if (selection.length === 0) {
     activeVariableIds = [];
-    sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal });
+    sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCollectionId, localCollections: activeLocalCollections });
     return;
   }
   sendToUI({ type: "loading-start" });
@@ -482,7 +507,7 @@ async function scanSelection() {
 
   if (textNodes.length === 0) {
     activeVariableIds = [];
-    sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: false, collectionFilter: collectionFilterVal, autoApply: autoApplyVal });
+    sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: false, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCollectionId, localCollections: activeLocalCollections });
     return;
   }
 
@@ -505,16 +530,9 @@ async function scanSelection() {
   }
 
   activeUnboundNode = undefined;
-  activeLocalCollections = undefined;
 
   if (textNodes.length === 1 && variableIds.size === 0) {
     activeUnboundNode = allUnboundNodes[0];
-    const collections = await figma.variables.getLocalVariableCollectionsAsync();
-    activeLocalCollections = collections.map(c => ({
-      id: c.id,
-      name: c.name,
-      modes: c.modes.map(m => ({ modeId: m.modeId, name: m.name }))
-    }));
   }
 
   if (!scanAllUnbound && allUnboundNodes.length > 100) {
@@ -607,15 +625,16 @@ async function fetchAndSendNextBatch(isInitial: boolean) {
   if (isInitial) {
     if (activeUnboundNode) {
       (payload as ScanResult).unboundNode = activeUnboundNode;
-      (payload as ScanResult).localCollections = activeLocalCollections;
       (payload as ScanResult).lastCollectionId = lastCollectionId;
     }
+    (payload as ScanResult).localCollections = activeLocalCollections;
     (payload as ScanResult).unboundNodes = activeUnboundNodesList;
     (payload as ScanResult).hasMoreUnbound = hasMoreUnboundNodes;
     (payload as ScanResult).activeTab = activeTab;
     (payload as ScanResult).negativeList = negativeList;
     (payload as ScanResult).isSelectionEmpty = false;
     (payload as ScanResult).collectionFilter = collectionFilterVal;
+    (payload as ScanResult).defaultCollectionId = defaultCollectionId;
     if (autoApplyVal !== undefined) (payload as ScanResult).autoApply = autoApplyVal;
   }
 
