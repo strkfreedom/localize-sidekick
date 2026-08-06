@@ -8,5 +8,6 @@
   "documentAccess": "dynamic-page",
   "networkAccess": {
     "allowedDomains": ["https://translate.googleapis.com"]
-  }
+  },
+  "permissions": ["teamlibrary"]
 }

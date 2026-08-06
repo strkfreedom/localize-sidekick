@@ -14,11 +14,13 @@
 // Plugin entry point
 // ---------------------------------------------------------------------------
 let lastCollectionId;
-let defaultCollectionId;
+let defaultCreateCollectionId;
+let defaultBindCollectionId;
 let activeTab = "bound";
 let scanAllUnbound = false;
 let collectionFilterVal;
 let autoApplyVal;
+let disabledCollections = [];
 async function initPlugin() {
     const size = await figma.clientStorage.getAsync("pluginSize");
     const width = (size === null || size === void 0 ? void 0 : size.width) || 560;
@@ -27,7 +29,8 @@ async function initPlugin() {
     const savedNegativeList = await figma.clientStorage.getAsync("negativeList");
     const savedCollectionFilter = await figma.clientStorage.getAsync("collectionFilter");
     const savedAutoApply = await figma.clientStorage.getAsync("autoApply");
-    const savedDefaultCollectionId = await figma.clientStorage.getAsync("defaultCollectionId");
+    const savedDefaultCreateCollectionId = await figma.clientStorage.getAsync("defaultCreateCollectionId");
+    const savedDefaultBindCollectionId = await figma.clientStorage.getAsync("defaultBindCollectionId");
     if (savedActiveTab === "bound" || savedActiveTab === "unbound") {
         activeTab = savedActiveTab;
     }
@@ -40,9 +43,14 @@ async function initPlugin() {
     if (typeof savedAutoApply === "boolean") {
         autoApplyVal = savedAutoApply;
     }
-    if (typeof savedDefaultCollectionId === "string") {
-        defaultCollectionId = savedDefaultCollectionId;
+    if (typeof savedDefaultCreateCollectionId === "string") {
+        defaultCreateCollectionId = savedDefaultCreateCollectionId;
     }
+    if (typeof savedDefaultBindCollectionId === "string") {
+        defaultBindCollectionId = savedDefaultBindCollectionId;
+    }
+    const savedDisabledCollections = await figma.clientStorage.getAsync("disabledCollections");
+    disabledCollections = Array.isArray(savedDisabledCollections) ? savedDisabledCollections : [];
     figma.showUI(__html__, {
         width,
         height,
@@ -51,6 +59,10 @@ async function initPlugin() {
     });
     // Scan on open
     await scanSelection();
+    // Load libraries in background and notify UI
+    ensureLibraryMaps().then(() => {
+        sendToUI({ type: "external-collections-loaded", externalCollections: availableExternalCollections });
+    });
     let currentSelectionIds = "";
     // Re-scan whenever selection changes
     figma.on("selectionchange", () => {
@@ -129,9 +141,14 @@ figma.ui.onmessage = async (rawMsg) => {
         await figma.clientStorage.setAsync("autoApply", autoApplyVal);
         return;
     }
-    if (msg.type === "update-default-collection") {
-        defaultCollectionId = msg.collectionId;
-        await figma.clientStorage.setAsync("defaultCollectionId", defaultCollectionId);
+    if (msg.type === "update-default-create-collection") {
+        defaultCreateCollectionId = msg.collectionId;
+        await figma.clientStorage.setAsync("defaultCreateCollectionId", defaultCreateCollectionId);
+        return;
+    }
+    if (msg.type === "update-default-bind-collection") {
+        defaultBindCollectionId = msg.collectionId;
+        await figma.clientStorage.setAsync("defaultBindCollectionId", defaultBindCollectionId);
         return;
     }
     if (msg.type === "apply-multiple") {
@@ -199,6 +216,167 @@ figma.ui.onmessage = async (rawMsg) => {
         }
         return;
     }
+    if (msg.type === "update-disabled-collections") {
+        disabledCollections = msg.disabledCollections;
+        await figma.clientStorage.setAsync("disabledCollections", disabledCollections);
+        return;
+    }
+    if (msg.type === "search-link-variables") {
+        const query = (msg.query || "").toLowerCase();
+        const collectionId = msg.collectionId || "all";
+        let results = [];
+        // 1. Search local variables
+        if (collectionId !== "external") {
+            const localVars = await figma.variables.getLocalVariablesAsync("STRING");
+            for (const v of localVars) {
+                if (disabledCollections.includes(v.variableCollectionId))
+                    continue;
+                if (collectionId !== "all" && collectionId !== "local" && v.variableCollectionId !== collectionId)
+                    continue;
+                if (collectionId === "all" || collectionId === "local" || v.variableCollectionId === collectionId) {
+                    const col = await getCachedCollection(v.variableCollectionId);
+                    let val = "";
+                    if (col && col.modes.length > 0) {
+                        let targetModeId = col.modes[0].modeId;
+                        if (msg.previewModeName) {
+                            const foundMode = col.modes.find(m => getStandardLanguageName(m.name) === msg.previewModeName);
+                            if (foundMode)
+                                targetModeId = foundMode.modeId;
+                        }
+                        const modeVal = v.valuesByMode[targetModeId];
+                        if (typeof modeVal === "string")
+                            val = modeVal;
+                    }
+                    if (v.name.toLowerCase().includes(query) || val.toLowerCase().includes(query)) {
+                        results.push({
+                            id: v.id,
+                            name: v.name,
+                            collectionName: `Local / ${col ? col.name : "Unknown"}`,
+                            value: val,
+                            isExternal: false
+                        });
+                    }
+                }
+            }
+        }
+        // 2. Search external variables
+        if (collectionId !== "local") {
+            // FAST PATH: skip expensive external import if query is empty and we already have local results
+            const skipExternal = (query === "" && collectionId === "all" && results.length > 0);
+            if (!skipExternal) {
+                const extMatches = availableExternalVariables.filter(v => {
+                    if (disabledCollections.includes(v.collectionId))
+                        return false;
+                    if (collectionId !== "all" && collectionId !== "external" && v.collectionId !== collectionId)
+                        return false;
+                    return v.name.toLowerCase().includes(query);
+                });
+                // Limit to first 20 to avoid freezing
+                const limitedExt = extMatches.slice(0, 20);
+                for (const extVar of limitedExt) {
+                    try {
+                        // Lazily import to get value
+                        const importedVar = await figma.variables.importVariableByKeyAsync(extVar.key);
+                        const col = await figma.variables.getVariableCollectionByIdAsync(importedVar.variableCollectionId);
+                        let val = "";
+                        if (col && col.modes.length > 0) {
+                            let targetModeId = col.modes[0].modeId;
+                            if (msg.previewModeName) {
+                                const foundMode = col.modes.find(m => getStandardLanguageName(m.name) === msg.previewModeName);
+                                if (foundMode)
+                                    targetModeId = foundMode.modeId;
+                            }
+                            const modeVal = importedVar.valuesByMode[targetModeId];
+                            if (typeof modeVal === "string")
+                                val = modeVal;
+                        }
+                        results.push({
+                            id: importedVar.id,
+                            name: extVar.name,
+                            collectionName: extVar.collectionName,
+                            value: val,
+                            isExternal: true,
+                            key: extVar.key
+                        });
+                    }
+                    catch (e) {
+                        console.warn("Failed to import variable for preview", e);
+                    }
+                }
+            } // close !skipExternal
+        }
+        results.sort((a, b) => a.name.localeCompare(b.name));
+        if (query === "") {
+            results = results.slice(0, 10);
+        }
+        sendToUI({ type: "search-link-variables-result", results });
+        return;
+    }
+    if (msg.type === "unbind-variable") {
+        try {
+            const textNodes = [];
+            for (const node of figma.currentPage.selection) {
+                await collectTextNodes(node, textNodes);
+            }
+            let unbound = 0;
+            for (const textNode of textNodes) {
+                const boundId = getTextBoundVariableId(textNode) || getTextBoundVariableIdFromComponentProperty(textNode);
+                if (boundId === msg.variableId) {
+                    await figma.loadFontAsync(textNode.fontName);
+                    textNode.setBoundVariable("characters", null);
+                    unbound++;
+                }
+            }
+            if (unbound > 0) {
+                sendToUI({ type: "status", message: "Unbound variable" });
+                await scanSelection();
+            }
+            else {
+                sendToUI({ type: "status", message: "No matching label found in selection" });
+            }
+        }
+        catch (e) {
+            console.error("Error unbinding variable", e);
+            sendToUI({ type: "status", message: "Failed to unbind: " + e });
+        }
+        return;
+    }
+    if (msg.type === "bind-existing-variable") {
+        try {
+            let varId = msg.variableId;
+            if (msg.isExternal && msg.key) {
+                const importedVar = await figma.variables.importVariableByKeyAsync(msg.key);
+                varId = importedVar.id;
+            }
+            const variable = await figma.variables.getVariableByIdAsync(varId);
+            if (!variable)
+                throw new Error("Variable not found");
+            // Multi-node binding (all selected items unbound)
+            const nodeIds = msg.nodeIds && msg.nodeIds.length > 0
+                ? msg.nodeIds
+                : activeUnboundNode ? [activeUnboundNode.id] : [];
+            let boundCount = 0;
+            for (const nodeId of nodeIds) {
+                const node = await figma.getNodeByIdAsync(nodeId);
+                if (node && node.type === "TEXT") {
+                    await figma.loadFontAsync(node.fontName);
+                    node.setBoundVariable("characters", variable);
+                    boundCount++;
+                }
+            }
+            if (boundCount > 0) {
+                const label = boundCount === 1 ? "Linked variable successfully" : `Linked variable to ${boundCount} labels`;
+                sendToUI({ type: "status", message: label });
+                await scanSelection();
+            }
+        }
+        catch (e) {
+            console.error("Error binding existing variable", e);
+            sendToUI({ type: "status", message: "Failed to link variable: " + e });
+            sendToUI({ type: "create-error" });
+        }
+        return;
+    }
     if (msg.type === "create-bind-variable") {
         try {
             lastCollectionId = msg.collectionId;
@@ -234,6 +412,7 @@ figma.ui.onmessage = async (rawMsg) => {
 // ---------------------------------------------------------------------------
 let activeVariableIds = [];
 let loadedVariableCount = 0;
+let activeAllUnbound = false;
 const BATCH_SIZE = 20;
 const collectionCache = new Map();
 const getCachedCollection = (collectionId) => {
@@ -243,6 +422,72 @@ const getCachedCollection = (collectionId) => {
     }
     return collectionCache.get(collectionId);
 };
+let libraryVarToLibNameMap = null;
+let libraryColKeyToLibNameMap = null;
+let libraryColNameToLibNameMap = null;
+let ensureLibraryMapsPromise = null;
+let availableExternalCollections = [];
+let availableExternalVariables = [];
+async function ensureLibraryMaps() {
+    if (ensureLibraryMapsPromise)
+        return ensureLibraryMapsPromise;
+    ensureLibraryMapsPromise = (async () => {
+        libraryVarToLibNameMap = new Map();
+        libraryColKeyToLibNameMap = new Map();
+        libraryColNameToLibNameMap = new Map();
+        availableExternalCollections = [];
+        availableExternalVariables = [];
+        try {
+            const libs = await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
+            for (const libCol of libs) {
+                if (libCol.key)
+                    libraryColKeyToLibNameMap.set(libCol.key, libCol.libraryName);
+                if (libCol.name)
+                    libraryColNameToLibNameMap.set(libCol.name, libCol.libraryName);
+                availableExternalCollections.push({
+                    id: libCol.key,
+                    name: `${libCol.libraryName} / ${libCol.name}`
+                });
+                try {
+                    const vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(libCol.key);
+                    for (const v of vars) {
+                        if (v.key) {
+                            libraryVarToLibNameMap.set(v.key, libCol.libraryName);
+                        }
+                        if (v.resolvedType === "STRING") {
+                            availableExternalVariables.push(Object.assign(Object.assign({}, v), { collectionName: `${libCol.libraryName} / ${libCol.name}`, libraryName: libCol.libraryName, collectionId: libCol.key }));
+                        }
+                    }
+                }
+                catch (e) {
+                    // Ignored
+                }
+            }
+        }
+        catch (e) {
+            console.warn("Failed to fetch available library variable collections", e);
+        }
+    })();
+    return ensureLibraryMapsPromise;
+}
+async function getLibraryNameForVariable(variable, collection) {
+    if (!variable.remote && !collection.remote)
+        return "Local";
+    const directLibName = collection.libraryName || variable.libraryName || collection.fileName;
+    if (directLibName && typeof directLibName === "string")
+        return directLibName;
+    await ensureLibraryMaps();
+    if (variable.key && (libraryVarToLibNameMap === null || libraryVarToLibNameMap === void 0 ? void 0 : libraryVarToLibNameMap.has(variable.key))) {
+        return libraryVarToLibNameMap.get(variable.key);
+    }
+    if (collection.key && (libraryColKeyToLibNameMap === null || libraryColKeyToLibNameMap === void 0 ? void 0 : libraryColKeyToLibNameMap.has(collection.key))) {
+        return libraryColKeyToLibNameMap.get(collection.key);
+    }
+    if (collection.name && (libraryColNameToLibNameMap === null || libraryColNameToLibNameMap === void 0 ? void 0 : libraryColNameToLibNameMap.has(collection.name))) {
+        return libraryColNameToLibNameMap.get(collection.name);
+    }
+    return "Library";
+}
 let activeUnboundNode;
 let activeLocalCollections;
 let activeUnboundNodesList = [];
@@ -271,12 +516,17 @@ async function scanSelection() {
     const collections = await figma.variables.getLocalVariableCollectionsAsync();
     activeLocalCollections = collections.map(c => ({
         id: c.id,
-        name: c.name,
+        name: `Local / ${c.name}`,
         modes: c.modes.map(m => ({ modeId: m.modeId, name: m.name }))
     }));
     if (selection.length === 0) {
-        activeVariableIds = [];
-        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCollectionId, localCollections: activeLocalCollections });
+        let availableModes = new Set();
+        collections.forEach(c => {
+            if (!disabledCollections.includes(c.id)) {
+                c.modes.forEach(m => availableModes.add(getStandardLanguageName(m.name)));
+            }
+        });
+        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections, availableModes: Array.from(availableModes) });
         return;
     }
     sendToUI({ type: "loading-start" });
@@ -287,7 +537,7 @@ async function scanSelection() {
     }
     if (textNodes.length === 0) {
         activeVariableIds = [];
-        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: false, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCollectionId, localCollections: activeLocalCollections });
+        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: false, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections });
         return;
     }
     const variableIds = new Set();
@@ -312,6 +562,7 @@ async function scanSelection() {
     if (textNodes.length === 1 && variableIds.size === 0) {
         activeUnboundNode = allUnboundNodes[0];
     }
+    const allUnbound = variableIds.size === 0 && allUnboundNodes.length > 0;
     if (!scanAllUnbound && allUnboundNodes.length > 100) {
         activeUnboundNodesList = allUnboundNodes.slice(0, 100);
         hasMoreUnboundNodes = true;
@@ -322,12 +573,53 @@ async function scanSelection() {
     }
     activeVariableIds = Array.from(variableIds);
     loadedVariableCount = 0;
+    activeAllUnbound = allUnbound;
     await fetchAndSendNextBatch(true);
+}
+function getStandardLanguageName(name) {
+    const n = name.trim().toLowerCase();
+    if (["th", "thai", "th-th"].includes(n))
+        return "Thai";
+    if (["en", "eng", "english", "en-us", "en-gb"].includes(n))
+        return "English";
+    if (["fr", "fre", "french", "fr-fr"].includes(n))
+        return "French";
+    if (["de", "ger", "german", "de-de"].includes(n))
+        return "German";
+    if (["ja", "jpn", "japanese", "ja-jp"].includes(n))
+        return "Japanese";
+    if (["zh", "zho", "chi", "chinese", "zh-cn", "zh-tw"].includes(n))
+        return "Chinese";
+    if (["es", "spa", "spanish", "es-es", "es-mx"].includes(n))
+        return "Spanish";
+    if (["it", "ita", "italian", "it-it"].includes(n))
+        return "Italian";
+    if (["ko", "kor", "korean", "ko-kr"].includes(n))
+        return "Korean";
+    if (["pt", "por", "portuguese", "pt-br", "pt-pt"].includes(n))
+        return "Portuguese";
+    if (["ru", "rus", "russian", "ru-ru"].includes(n))
+        return "Russian";
+    if (["vi", "vie", "vietnamese", "vi-vn"].includes(n))
+        return "Vietnamese";
+    if (["id", "ind", "indonesian", "id-id"].includes(n))
+        return "Indonesian";
+    if (["ms", "may", "malay", "ms-my"].includes(n))
+        return "Malay";
+    // Convert something like "Mode 1" to "Mode 1" (keep original case)
+    return name.trim();
 }
 async function fetchAndSendNextBatch(isInitial) {
     const idsToFetch = activeVariableIds.slice(loadedVariableCount, loadedVariableCount + BATCH_SIZE);
     if (idsToFetch.length === 0) {
         if (isInitial) {
+            let availableModes = new Set();
+            const collections = await figma.variables.getLocalVariableCollectionsAsync();
+            collections.forEach(c => {
+                if (!disabledCollections.includes(c.id)) {
+                    c.modes.forEach(m => availableModes.add(getStandardLanguageName(m.name)));
+                }
+            });
             sendToUI({
                 type: "scan-result",
                 variables: [],
@@ -338,7 +630,11 @@ async function fetchAndSendNextBatch(isInitial) {
                 unboundNodes: activeUnboundNodesList,
                 hasMoreUnbound: hasMoreUnboundNodes,
                 activeTab: activeTab,
-                negativeList: negativeList
+                negativeList: negativeList,
+                externalCollections: availableExternalCollections,
+                disabledCollections,
+                availableModes: Array.from(availableModes),
+                allUnbound: activeAllUnbound
             });
         }
         return;
@@ -368,10 +664,11 @@ async function fetchAndSendNextBatch(isInitial) {
                     value,
                 };
             });
+            const libName = await getLibraryNameForVariable(variable, collection);
             return {
                 variableId: variable.id,
                 variableName: variable.name,
-                collectionName: collection.name + (isRemote ? " (Library)" : ""),
+                collectionName: `${libName} / ${collection.name}`,
                 modes,
                 isRemote,
             };
@@ -400,11 +697,23 @@ async function fetchAndSendNextBatch(isInitial) {
         payload.hasMoreUnbound = hasMoreUnboundNodes;
         payload.activeTab = activeTab;
         payload.negativeList = negativeList;
+        payload.externalCollections = availableExternalCollections;
+        payload.disabledCollections = disabledCollections;
         payload.isSelectionEmpty = false;
         payload.collectionFilter = collectionFilterVal;
-        payload.defaultCollectionId = defaultCollectionId;
+        payload.defaultCreateCollectionId = defaultCreateCollectionId;
+        payload.defaultBindCollectionId = defaultBindCollectionId;
         if (autoApplyVal !== undefined)
             payload.autoApply = autoApplyVal;
+        payload.allUnbound = activeAllUnbound;
+        let availableModes = new Set();
+        const collections = await figma.variables.getLocalVariableCollectionsAsync();
+        collections.forEach(c => {
+            if (!disabledCollections.includes(c.id)) {
+                c.modes.forEach(m => availableModes.add(getStandardLanguageName(m.name)));
+            }
+        });
+        payload.availableModes = Array.from(availableModes);
     }
     sendToUI(payload);
 }

@@ -210,7 +210,7 @@
       flex-shrink: 0;
     }
 
-    .edit-var-btn, .copy-var-btn {
+    .edit-var-btn, .copy-var-btn, .unbind-var-btn {
       opacity: 0;
       pointer-events: none;
       transition: opacity var(--transition), color var(--transition);
@@ -221,12 +221,15 @@
       align-items: center;
       justify-content: center;
     }
-    .var-card:hover .edit-var-btn, .var-card:hover .copy-var-btn {
+    .var-card:hover .edit-var-btn, .var-card:hover .copy-var-btn, .var-card:hover .unbind-var-btn {
       opacity: 1;
       pointer-events: auto;
     }
     .edit-var-btn:hover, .copy-var-btn:hover {
       color: var(--text-primary);
+    }
+    .unbind-var-btn:hover {
+      color: var(--danger);
     }
 
     .rename-input {
@@ -728,13 +731,14 @@
       <select id="collectionFilter" class="select-dropdown">
         <option value="all">All collections</option>
         <option value="local">Local collections only</option>
+        <option value="external">Libraries only</option>
       </select>
       <div class="search-wrap">
         <svg class="search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
           <circle cx="7" cy="7" r="4.5" />
           <line x1="10.5" y1="10.5" x2="14" y2="14" />
         </svg>
-        <input type="text" id="searchInput" class="search-input" placeholder="Search variables..." spellcheck="false" />
+        <input type="text" id="searchInput" class="search-input" placeholder="Search variables & values" spellcheck="false" />
       </div>
     </div>
     <div class="top-header-right">
@@ -757,7 +761,7 @@
   <!-- =====================================================================
        FOOTER (Global Apply / Undo)
   ====================================================================== -->
-  <div class="footer auto-apply-on">
+  <div class="footer auto-apply-on" id="globalFooter">
     <div class="footer-left">
       <button class="btn-ghost" id="refreshBtn" title="Re-scan selection">
         <svg class="refresh-icon" id="refreshIcon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="12" height="12">
@@ -776,6 +780,10 @@
       <button class="btn-ghost" id="undoBtn" disabled>Undo</button>
       <button class="btn-primary" id="applyBtn" disabled>Apply</button>
     </div>
+  </div>
+  <div class="footer" id="bindVariableGlobalFooter" style="display: none; align-items: center; justify-content: space-between; background: var(--bg-card); flex-shrink: 0; padding: 12px 16px; border-top: 1px solid var(--border);">
+    <span style="font-size: 11px; font-weight: 500; color: var(--text-secondary);">Preview Mode</span>
+    <select id="previewModeSelect" class="select-dropdown" style="width: 140px; margin: 0; padding: 4px 8px; font-size: 11px;"></select>
   </div>
   </div> <!-- End Tab Bound -->
 
@@ -808,7 +816,7 @@
       </div>
       <div id="unboundList" style="display: flex; flex-direction: column; gap: 8px;"></div>
     </div>
-    <div class="footer" style="justify-content: center; background: var(--bg-card); flex-shrink: 0; padding: 12px 16px; border-top: 1px solid var(--border);">
+    <div class="footer" id="unboundFooter" style="justify-content: center; background: var(--bg-card); flex-shrink: 0; padding: 12px 16px; border-top: 1px solid var(--border);">
       <button class="btn-ghost" id="scanAllUnboundBtn" style="width: 100%; border: 1px dashed var(--border); padding: 8px; font-weight: 500; display: none;">Scan all labels (the rest)</button>
     </div>
   </div>
@@ -817,13 +825,25 @@
        TAB: SETTINGS
   ====================================================================== -->
   <div class="tab-content" id="tabSettings" style="display: none; flex: 1; flex-direction: column; overflow: hidden; background: var(--bg-page);">
-    <div style="padding: 20px 16px;">
+    <div style="padding: 20px 16px; display: flex; flex-direction: column; gap: 24px; overflow-y: auto;">
       <div style="display: flex; flex-direction: column; gap: 8px;">
-        <label style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Default Collection</label>
-        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; line-height: 1.4;">Select the default collection for creating new variables and linking existing ones.</div>
-        <select id="defaultCollectionSelect" class="select-dropdown" style="width: 100%;">
+        <label style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Default Collection for New Variables</label>
+        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; line-height: 1.4;">Select the default local collection to use when creating new variables.</div>
+        <select id="defaultCreateCollectionSelect" class="select-dropdown" style="width: 100%;">
           <option value="">No default collection</option>
         </select>
+      </div>
+      
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <label style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Active Collections</label>
+        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; line-height: 1.4;">Uncheck collections to hide them from all filters and searches.</div>
+        <div style="font-size: 11px; margin-top: 4px;">
+          <a href="#" id="checkAllColsBtn" style="color: #18A0FB; text-decoration: none; margin-right: 8px;">Check all</a>
+          <a href="#" id="uncheckAllColsBtn" style="color: #18A0FB; text-decoration: none;">Uncheck all</a>
+        </div>
+        <div id="activeCollectionsList" style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+          <!-- Populated dynamically -->
+        </div>
       </div>
     </div>
   </div>
@@ -858,14 +878,20 @@
     let isLoadingMore = false;
 
     let unboundNode = null;
+    let allUnbound = false;
+    let allUnboundNodeIds = [];
     let localCollections = [];
+    let externalCollections = [];
     let lastCollectionId = null;
-    let defaultCollectionId = null;
+    let defaultCreateCollectionId = null;
+    let disabledCollections = [];
     let lastBoundVariableName = null;
     let currentUnboundNodes = [];
     let hasMoreUnbound = false;
     let currentNegativeList = [];
     let isSelectionEmpty = true;
+    let availableModes = [];
+    let selectedPreviewMode = null;
 
     const tabsContainer = document.getElementById("tabsContainer");
     const tabBtns = document.querySelectorAll(".tab-btn");
@@ -886,7 +912,9 @@
     const collectionFilter = document.getElementById("collectionFilter");
     const searchInput = document.getElementById("searchInput");
     const toggleExpandBtn = document.getElementById("toggleExpandBtn");
-    const defaultCollectionSelect = document.getElementById("defaultCollectionSelect");
+    const activeCollectionsList = document.getElementById("activeCollectionsList");
+    const checkAllColsBtn = document.getElementById("checkAllColsBtn");
+    const uncheckAllColsBtn = document.getElementById("uncheckAllColsBtn");
 
     let toastTimeout = null;
     function showToast(message, isError = false) {
@@ -932,6 +960,48 @@
         return;
       }
 
+      if (msg.type === "external-collections-loaded") {
+        if (msg.externalCollections) {
+          externalCollections = msg.externalCollections;
+          renderCollectionsSettings();
+          updateSettingsDropdown();
+          
+          const linkVarCollectionFilter = document.getElementById("linkVarCollectionFilter");
+          if (linkVarCollectionFilter) {
+            const currentVal = linkVarCollectionFilter.value;
+            // Repopulate options for Bind Variable page filter
+            let defaultVal = "all";
+            let optionsHtml = `
+              <option value="all" ${defaultVal === "all" ? "selected" : ""}>All collections</option>
+              <option value="local" ${defaultVal === "local" ? "selected" : ""}>Local collections only</option>
+              <option value="external" ${defaultVal === "external" ? "selected" : ""}>Libraries only</option>
+              <option disabled>──────────</option>
+            `;
+            localCollections.forEach(c => {
+              if (disabledCollections.includes(c.id)) return;
+              optionsHtml += `<option value="${c.id}" ${defaultVal === c.id ? "selected" : ""}>${escHtml(c.name)}</option>`;
+            });
+            if (externalCollections.length > 0) {
+              let hasEnabledExternal = false;
+              let externalHtml = "";
+              externalCollections.forEach(c => {
+                if (disabledCollections.includes(c.id)) return;
+                hasEnabledExternal = true;
+                externalHtml += `<option value="${c.id}" ${defaultVal === c.id ? "selected" : ""}>${escHtml(c.name)}</option>`;
+              });
+              if (hasEnabledExternal) {
+                optionsHtml += `<option disabled>──────────</option>` + externalHtml;
+              }
+            }
+            linkVarCollectionFilter.innerHTML = optionsHtml;
+            if (linkVarCollectionFilter.querySelector(`option[value="${currentVal}"]`)) {
+              linkVarCollectionFilter.value = currentVal;
+            }
+          }
+        }
+        return;
+      }
+
       if (msg.type === "scan-result" || msg.type === "load-more-result") {
         const activeEl = document.activeElement;
         let focusedVarId = null;
@@ -951,15 +1021,33 @@
           unboundNode = msg.unboundNode || null;
           if (msg.localCollections) {
             localCollections = msg.localCollections;
-            updateSettingsDropdown();
+          }
+          if (msg.externalCollections) {
+            externalCollections = msg.externalCollections;
+          }
+          if (msg.disabledCollections) {
+            disabledCollections = msg.disabledCollections;
+          }
+          if (msg.availableModes) {
+            availableModes = msg.availableModes;
+            if (selectedPreviewMode === null && availableModes.length > 0) {
+              selectedPreviewMode = availableModes[0];
+            } else if (selectedPreviewMode === null) {
+              selectedPreviewMode = "";
+            }
           }
           if (msg.lastCollectionId) lastCollectionId = msg.lastCollectionId;
-          if (msg.defaultCollectionId !== undefined) {
-            defaultCollectionId = msg.defaultCollectionId;
-            updateSettingsDropdown();
+          if (msg.defaultCreateCollectionId !== undefined) {
+            defaultCreateCollectionId = msg.defaultCreateCollectionId;
           }
+          renderCollectionsSettings();
+          updateSettingsDropdown();
           
-          if (msg.unboundNodes) currentUnboundNodes = msg.unboundNodes;
+          if (msg.unboundNodes) {
+            currentUnboundNodes = msg.unboundNodes;
+          }
+          allUnbound = msg.allUnbound === true;
+          allUnboundNodeIds = allUnbound && currentUnboundNodes.length > 0 ? currentUnboundNodes.map(n => n.id) : [];
           if (msg.hasMoreUnbound !== undefined) hasMoreUnbound = msg.hasMoreUnbound;
           if (msg.isSelectionEmpty !== undefined) isSelectionEmpty = msg.isSelectionEmpty;
           if (msg.activeTab) switchTab(msg.activeTab, false);
@@ -1027,6 +1115,56 @@
             if (selectionStart !== null && selectionEnd !== null) {
               taToFocus.setSelectionRange(selectionStart, selectionEnd);
             }
+          }
+        }
+      } else if (msg.type === "search-link-variables-result") {
+        const linkVarResults = document.getElementById("linkVarResults");
+        if (linkVarResults) {
+          linkVarResults.innerHTML = "";
+          if (msg.results.length === 0) {
+            linkVarResults.innerHTML = `<div style="padding: 12px; text-align: center; color: var(--text-muted); font-size: 11px;">No variables found</div>`;
+          } else {
+            const currentSearchInput = document.getElementById("linkVarSearch");
+            const currentQuery = currentSearchInput ? currentSearchInput.value.trim() : "";
+            
+            const highlightMatch = (text, q) => {
+              if (!q) return escHtml(text);
+              const escapedText = escHtml(text);
+              const escapedQuery = escHtml(q);
+              const regex = new RegExp(`(${escapedQuery.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')})`, "gi");
+              return escapedText.replace(regex, `<mark style="background-color: rgba(250, 204, 21, 0.4); color: var(--text-primary); border-radius: 2px; padding: 0 1px; margin: 0 -1px;">$1</mark>`);
+            };
+
+            msg.results.forEach(res => {
+              const item = document.createElement("div");
+              item.style.padding = "8px 12px";
+              item.style.borderRadius = "4px";
+              item.style.cursor = "pointer";
+              item.style.display = "flex";
+              item.style.flexDirection = "column";
+              item.style.gap = "4px";
+              item.style.transition = "background-color 0.1s";
+              item.onmouseenter = () => item.style.backgroundColor = "var(--bg-hover)";
+              item.onmouseleave = () => item.style.backgroundColor = "transparent";
+              
+              item.innerHTML = `
+                <div style="font-size: 11px; font-weight: 500; color: var(--text-primary); word-break: break-all;">${highlightMatch(res.name, currentQuery)}</div>
+                <div style="font-size: 10px; color: var(--text-secondary); display: flex; justify-content: space-between;">
+                  <span>${escHtml(res.collectionName)}</span>
+                  <span style="color: var(--text-muted); font-style: italic; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escHtml(res.value)}">${highlightMatch(res.value, currentQuery)}</span>
+                </div>
+              `;
+              
+              item.onclick = () => {
+                const btn = document.getElementById("createBindBtn");
+                if (btn) btn.disabled = true;
+                const msg = { type: "bind-existing-variable", variableId: res.id, isExternal: res.isExternal, key: res.key };
+                if (allUnbound && allUnboundNodeIds.length > 0) msg.nodeIds = allUnboundNodeIds;
+                parent.postMessage({ pluginMessage: msg }, "*");
+              };
+              
+              linkVarResults.appendChild(item);
+            });
           }
         }
       } else if (msg.type === "create-error") {
@@ -1204,20 +1342,103 @@
       renderContent();
     });
 
-    defaultCollectionSelect.addEventListener("change", () => {
-      parent.postMessage({ pluginMessage: { type: "update-default-collection", collectionId: defaultCollectionSelect.value } }, "*");
+
+
+    defaultCreateCollectionSelect.addEventListener("change", () => {
+      parent.postMessage({ pluginMessage: { type: "update-default-create-collection", collectionId: defaultCreateCollectionSelect.value } }, "*");
     });
 
+    if (checkAllColsBtn) {
+      checkAllColsBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        disabledCollections = [];
+        parent.postMessage({ pluginMessage: { type: "update-disabled-collections", disabledCollections } }, "*");
+        renderCollectionsSettings();
+        updateSettingsDropdown();
+        updateDropdownOptions();
+      });
+    }
+
+    if (uncheckAllColsBtn) {
+      uncheckAllColsBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        const allCols = [];
+        localCollections.forEach(c => allCols.push(c.id));
+        externalCollections.forEach(c => allCols.push(c.id));
+        disabledCollections = allCols;
+        defaultCreateCollectionId = null;
+        parent.postMessage({ pluginMessage: { type: "update-default-create-collection", collectionId: "" } }, "*");
+        parent.postMessage({ pluginMessage: { type: "update-disabled-collections", disabledCollections } }, "*");
+        renderCollectionsSettings();
+        updateSettingsDropdown();
+        updateDropdownOptions();
+      });
+    }
+
+    function renderCollectionsSettings() {
+      if (!activeCollectionsList) return;
+      activeCollectionsList.innerHTML = "";
+      
+      const allCols = [];
+      localCollections.forEach(c => allCols.push({ id: c.id, name: c.name, type: "local" }));
+      externalCollections.forEach(c => allCols.push({ id: c.id, name: c.name, type: "external" }));
+      
+      if (allCols.length === 0) {
+        activeCollectionsList.innerHTML = `<div style="font-size: 11px; color: var(--text-secondary);">No collections found.</div>`;
+        return;
+      }
+      
+      allCols.forEach(c => {
+        const row = document.createElement("label");
+        row.style.display = "flex";
+        row.style.alignItems = "center";
+        row.style.gap = "8px";
+        row.style.fontSize = "12px";
+        row.style.color = "var(--text-primary)";
+        row.style.cursor = "pointer";
+        
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !disabledCollections.includes(c.id);
+        cb.style.margin = "0";
+        cb.style.accentColor = "var(--text-brand)";
+        
+        cb.addEventListener("change", (e) => {
+          if (e.target.checked) {
+            disabledCollections = disabledCollections.filter(id => id !== c.id);
+          } else {
+            if (!disabledCollections.includes(c.id)) {
+              disabledCollections.push(c.id);
+            }
+            if (defaultCreateCollectionId === c.id) {
+              defaultCreateCollectionId = null;
+              parent.postMessage({ pluginMessage: { type: "update-default-create-collection", collectionId: "" } }, "*");
+            }
+          }
+          parent.postMessage({ pluginMessage: { type: "update-disabled-collections", disabledCollections } }, "*");
+          updateSettingsDropdown();
+          updateDropdownOptions();
+        });
+        
+        row.appendChild(cb);
+        row.appendChild(document.createTextNode(c.name + (c.type === "external" ? " (Library)" : "")));
+        activeCollectionsList.appendChild(row);
+      });
+    }
+
     function updateSettingsDropdown() {
-      defaultCollectionSelect.innerHTML = `<option value="">No default collection</option>`;
+      if (!defaultCreateCollectionSelect) return;
+      
+      defaultCreateCollectionSelect.innerHTML = `<option value="">No default collection</option>`;
       localCollections.forEach(c => {
+        if (disabledCollections.includes(c.id)) return;
         const opt = document.createElement("option");
         opt.value = c.id;
         opt.textContent = c.name;
-        if (c.id === defaultCollectionId) {
+        if (c.id === defaultCreateCollectionId) {
           opt.selected = true;
         }
-        defaultCollectionSelect.appendChild(opt);
+        defaultCreateCollectionSelect.appendChild(opt);
       });
     }
 
@@ -1351,26 +1572,55 @@
       collectionFilter.innerHTML = `
         <option value="all">All collections</option>
         <option value="local">Local collections only</option>
+        <option value="external">Libraries only</option>
         <option disabled>──────────</option>
       `;
-      const uniqueCollections = [...new Set(currentVariables.map(v => v.collectionName))];
+      const uniqueCollections = new Set(currentVariables.map(v => v.collectionName));
+      localCollections.forEach(c => {
+        if (!disabledCollections.includes(c.id)) uniqueCollections.add(c.name);
+      });
+      externalCollections.forEach(c => {
+        if (!disabledCollections.includes(c.id)) uniqueCollections.add(c.name);
+      });
+      const uniqueCollectionsArr = [...uniqueCollections];
       
       const targetVal = collectionFilter.dataset.savedValue || currentVal;
       if (collectionFilter.dataset.savedValue) {
         collectionFilter.dataset.savedValue = "";
       }
 
-      if (targetVal !== "all" && targetVal !== "local" && !uniqueCollections.includes(targetVal)) {
-        uniqueCollections.push(targetVal);
+      if (targetVal !== "all" && targetVal !== "local" && targetVal !== "external" && !uniqueCollectionsArr.includes(targetVal)) {
+        uniqueCollectionsArr.push(targetVal);
       }
 
-      uniqueCollections.sort((a, b) => a.localeCompare(b));
-      uniqueCollections.forEach(c => {
+      const localColsArr = uniqueCollectionsArr.filter(name => name.startsWith("Local /"));
+      const externalColsArr = uniqueCollectionsArr.filter(name => !name.startsWith("Local /"));
+
+      localColsArr.sort((a, b) => a.localeCompare(b));
+      externalColsArr.sort((a, b) => a.localeCompare(b));
+
+      localColsArr.forEach(val => {
         const opt = document.createElement("option");
-        opt.value = c;
-        opt.textContent = c;
+        opt.value = val;
+        opt.textContent = val;
+        if (val === targetVal) opt.selected = true;
         collectionFilter.appendChild(opt);
       });
+
+      if (externalColsArr.length > 0) {
+        const sep = document.createElement("option");
+        sep.disabled = true;
+        sep.textContent = "──────────";
+        collectionFilter.appendChild(sep);
+        
+        externalColsArr.forEach(val => {
+          const opt = document.createElement("option");
+          opt.value = val;
+          opt.textContent = val;
+          if (val === targetVal) opt.selected = true;
+          collectionFilter.appendChild(opt);
+        });
+      }
       
       if (collectionFilter.querySelector(`option[value="${targetVal}"]`)) {
         collectionFilter.value = targetVal;
@@ -1388,17 +1638,81 @@
       const filterVal = collectionFilter.value;
       const searchQuery = searchInput.value.toLowerCase().trim();
 
-      if (unboundNode && localCollections.length > 0) {
+      const topHeader = document.querySelector(".top-header");
+      const unboundFooter = document.getElementById("unboundFooter");
+      const globalFooter = document.getElementById("globalFooter");
+      const bindVariableGlobalFooter = document.getElementById("bindVariableGlobalFooter");
+      
+      if (topHeader) topHeader.style.display = "flex";
+      if (unboundFooter) unboundFooter.style.display = "flex";
+      if (globalFooter) globalFooter.style.display = "flex";
+      if (bindVariableGlobalFooter) bindVariableGlobalFooter.style.display = "none";
+
+      if ((unboundNode || allUnbound) && localCollections.length > 0) {
+        if (topHeader) topHeader.style.display = "none";
+        if (unboundFooter) unboundFooter.style.display = "none";
+        if (globalFooter) globalFooter.style.display = "none";
+        if (bindVariableGlobalFooter) {
+          bindVariableGlobalFooter.style.display = "flex";
+          const previewModeSelect = bindVariableGlobalFooter.querySelector("#previewModeSelect");
+          if (previewModeSelect) {
+            previewModeSelect.innerHTML = `<option value="">Default (First Mode)</option>` + availableModes.map(m => `<option value="${escHtml(m)}" ${m === selectedPreviewMode ? "selected" : ""}>${escHtml(m)}</option>`).join("");
+          }
+        }
+
+        const isMultiBind = allUnbound && !unboundNode;
+        const bindSubtitle = isMultiBind ? `<span style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">${allUnboundNodeIds.length} labels selected</span>` : "";
+
         const section = document.createElement("div");
         section.className = "unbound-section";
         section.innerHTML = `
-          <div style="display: flex; flex-direction: column; margin-bottom: 24px; text-align: left; align-items: flex-start; padding: 16px; background: var(--bg-secondary); border-radius: 6px; border: 1px solid var(--border);">
-            <div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px;">New Variable</div>
+          <!-- BIND VARIABLE SECTION -->
+          <div id="bindVariableView" style="display: flex; flex-direction: column; flex: 1; width: 100%; text-align: left; align-items: flex-start; min-height: 0; box-sizing: border-box;">
+            
+            <!-- STICKY HEADER -->
+            <div style="position: sticky; top: 0; background: var(--bg-page); z-index: 10; width: 100%; padding: 16px 16px 8px 16px; box-sizing: border-box; border-bottom: 1px solid var(--border);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; width: 100%;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <div style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Bind Variable</div>
+                  ${bindSubtitle}
+                </div>
+                ${isMultiBind ? "" : `<a href="#" id="showCreateViewBtn" style="font-size: 11px; color: #18A0FB; text-decoration: none; cursor: pointer;">New Variable</a>`}
+              </div>
+              <div style="display: flex; gap: 8px; width: 100%;">
+                <div class="search-wrap" style="flex: 1; position: relative;">
+                  <svg class="search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--text-muted);">
+                    <circle cx="7" cy="7" r="4.5" />
+                    <line x1="10.5" y1="10.5" x2="14" y2="14" />
+                  </svg>
+                  <input type="text" id="linkVarSearch" class="search-input" placeholder="Search variables & values" spellcheck="false" style="width: 100%; padding: 6px 8px 6px 28px; box-sizing: border-box; font-size: 11px;" />
+                </div>
+                <select id="linkVarCollectionFilter" class="select-dropdown" style="width: 180px; margin-bottom: 0;">
+                  <!-- Populated later from externalCollections and localCollections -->
+                </select>
+              </div>
+            </div>
+
+            <!-- SCROLLABLE RESULTS -->
+            <div id="linkVarResults" style="display: flex; flex-direction: column; gap: 4px; width: 100%; flex: 1; overflow-y: scroll; padding: 8px 16px 16px 16px; box-sizing: border-box;">
+              <div style="padding: 12px; text-align: center; color: var(--text-muted); font-size: 11px;">Search for a variable to bind</div>
+            </div>
+          </div>
+
+          <!-- NEW VARIABLE SECTION -->
+          <div id="createVariableView" style="display: none; flex-direction: column; flex: 1; width: 100%; text-align: left; align-items: flex-start; min-height: 0; padding: 16px; box-sizing: border-box;">
+            <div style="display: flex; align-items: center; margin-bottom: 12px; width: 100%; gap: 8px;">
+              <button id="backToBindViewBtn" class="icon-btn" style="padding: 2px; margin-left: -6px; background: none; border: none; cursor: pointer; color: var(--text-secondary);" title="Back">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16">
+                  <path d="M10 12L6 8L10 4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <div style="font-size: 13px; font-weight: 600; color: var(--text-primary);">New Variable</div>
+            </div>
             
             <div style="display: flex; gap: 8px; flex-direction: column; width: 100%;">
               <label style="font-size: 11px; font-weight: 500;">Collection</label>
               <select id="newVarCollection" class="select-dropdown" style="width: 100%; margin-bottom: 4px;">
-                ${localCollections.map(c => `<option value="${c.id}" ${c.id === (defaultCollectionId || lastCollectionId) ? "selected" : ""}>${escHtml(c.name)}</option>`).join("")}
+                ${localCollections.filter(c => !disabledCollections.includes(c.id)).map(c => `<option value="${c.id}" ${c.id === (defaultCreateCollectionId || lastCollectionId) ? "selected" : ""}>${escHtml(c.name)}</option>`).join("")}
               </select>
               
               <label style="font-size: 11px; font-weight: 500;">Variable Name</label>
@@ -1417,6 +1731,106 @@
         `;
         
         mainContent.appendChild(section);
+
+        // --- Link Variable Wiring ---
+        const linkVarSearch = section.querySelector("#linkVarSearch");
+        const linkVarCollectionFilter = section.querySelector("#linkVarCollectionFilter");
+        const linkVarResults = section.querySelector("#linkVarResults");
+
+        let previewModeSelect = null;
+        if (bindVariableGlobalFooter) {
+          previewModeSelect = bindVariableGlobalFooter.querySelector("#previewModeSelect");
+          if (previewModeSelect) {
+            const newSelect = previewModeSelect.cloneNode(true);
+            previewModeSelect.parentNode.replaceChild(newSelect, previewModeSelect);
+            previewModeSelect = newSelect;
+          }
+        }
+
+        let linkVarTimeout;
+        const triggerSearch = () => {
+          clearTimeout(linkVarTimeout);
+          linkVarTimeout = setTimeout(() => {
+            const query = linkVarSearch.value.trim();
+            const collectionId = linkVarCollectionFilter.value;
+            const previewModeName = previewModeSelect ? previewModeSelect.value : selectedPreviewMode;
+            
+            linkVarResults.innerHTML = `<div style="padding: 12px; text-align: center; color: var(--text-muted); font-size: 11px;">Searching...</div>`;
+            parent.postMessage({ pluginMessage: { type: "search-link-variables", query, collectionId, previewModeName } }, "*");
+          }, 300);
+        };
+
+        if (linkVarSearch) {
+          linkVarSearch.addEventListener("input", triggerSearch);
+        }
+        if (linkVarCollectionFilter) {
+          linkVarCollectionFilter.addEventListener("change", triggerSearch);
+        }
+        if (previewModeSelect) {
+          previewModeSelect.addEventListener("change", () => {
+            selectedPreviewMode = previewModeSelect.value;
+            triggerSearch();
+          });
+        }
+
+        const showCreateViewBtn = section.querySelector("#showCreateViewBtn");
+        const backToBindViewBtn = section.querySelector("#backToBindViewBtn");
+        const bindVariableView = section.querySelector("#bindVariableView");
+        const createVariableView = section.querySelector("#createVariableView");
+        
+        if (showCreateViewBtn && createVariableView && bindVariableView) {
+          showCreateViewBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            bindVariableView.style.display = "none";
+            createVariableView.style.display = "flex";
+            if (bindVariableGlobalFooter) bindVariableGlobalFooter.style.display = "none";
+          });
+        }
+        
+        if (backToBindViewBtn && createVariableView && bindVariableView) {
+          backToBindViewBtn.addEventListener("click", () => {
+            createVariableView.style.display = "none";
+            bindVariableView.style.display = "flex";
+            if (bindVariableGlobalFooter) bindVariableGlobalFooter.style.display = "flex";
+          });
+        }
+
+        if (linkVarCollectionFilter) {
+          // Populate options
+          let defaultVal = "all";
+          
+          let optionsHtml = `
+            <option value="all" ${defaultVal === "all" ? "selected" : ""}>All collections</option>
+            <option value="local" ${defaultVal === "local" ? "selected" : ""}>Local collections only</option>
+            <option value="external" ${defaultVal === "external" ? "selected" : ""}>Libraries only</option>
+            <option disabled>──────────</option>
+          `;
+          
+          localCollections.forEach(c => {
+            if (disabledCollections.includes(c.id)) return;
+            optionsHtml += `<option value="${c.id}" ${defaultVal === c.id ? "selected" : ""}>${escHtml(c.name)}</option>`;
+          });
+          if (externalCollections.length > 0) {
+            let hasEnabledExternal = false;
+            let externalHtml = "";
+            externalCollections.forEach(c => {
+              if (disabledCollections.includes(c.id)) return;
+              hasEnabledExternal = true;
+              externalHtml += `<option value="${c.id}" ${defaultVal === c.id ? "selected" : ""}>${escHtml(c.name)}</option>`;
+            });
+            if (hasEnabledExternal) {
+              optionsHtml += `<option disabled>──────────</option>` + externalHtml;
+            }
+          }
+          
+          linkVarCollectionFilter.innerHTML = optionsHtml;
+          
+          linkVarCollectionFilter.addEventListener("change", triggerSearch);
+        }
+
+        // We will also need to populate linkVarCollectionFilter when externalCollections arrive, or trigger an initial search.
+        triggerSearch();
+        // --- End Link Variable Wiring ---
 
         // Prefill variable name from last selected bound variable
         const newVarNameInput = section.querySelector("#newVarName");
@@ -1544,7 +1958,8 @@
 
       let filteredVariables = currentVariables.filter(v => {
         if (filterVal === "local" && v.isRemote) return false;
-        if (filterVal !== "all" && filterVal !== "local" && v.collectionName !== filterVal) return false;
+        if (filterVal === "external" && !v.isRemote) return false;
+        if (filterVal !== "all" && filterVal !== "local" && filterVal !== "external" && v.collectionName !== filterVal) return false;
         
         if (searchQuery) {
           if (!v.variableName.toLowerCase().includes(searchQuery)) {
@@ -1556,7 +1971,7 @@
       });
 
       if (filteredVariables.length === 0) {
-        if (!unboundNode) {
+        if (!unboundNode && !allUnbound) {
           renderEmptyState();
         }
         return;
@@ -1697,6 +2112,13 @@
           <div class="dirty-dot" id="dot-${escHtml(variable.variableId)}" style="opacity: ${dotOpacity}"></div>
         </div>
         <div class="var-header-right">
+          <button class="icon-btn unbind-var-btn" title="Unbind variable">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M6.5 9.5L4 12a2.121 2.121 0 01-3-3l2.5-2.5"/>
+              <path d="M9.5 6.5L12 4a2.121 2.121 0 013 3l-2.5 2.5"/>
+              <line x1="2" y1="2" x2="14" y2="14"/>
+            </svg>
+          </button>
           <button class="icon-btn copy-var-btn" title="Copy variable name">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
               <rect x="5" y="5" width="8" height="8" rx="1.5"/>
@@ -1845,6 +2267,14 @@
       card.appendChild(bodyWrapper);
 
       // Interactions
+      const unbindBtn = card.querySelector(".unbind-var-btn");
+      if (unbindBtn) {
+        unbindBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          parent.postMessage({ pluginMessage: { type: "unbind-variable", variableId: variable.variableId } }, "*");
+        });
+      }
+
       const copyBtn = card.querySelector(".copy-var-btn");
       if (copyBtn) {
         copyBtn.addEventListener("click", (e) => {
