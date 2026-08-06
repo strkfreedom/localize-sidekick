@@ -844,6 +844,7 @@
     let unboundNode = null;
     let localCollections = [];
     let lastCollectionId = null;
+    let lastBoundVariableName = null;
     let currentUnboundNodes = [];
     let hasMoreUnbound = false;
     let currentNegativeList = [];
@@ -1355,7 +1356,12 @@
               </select>
               
               <label style="font-size: 11px; font-weight: 500;">Variable Name</label>
-              <input type="text" id="newVarName" class="rename-input" style="width: 100%; margin-right: 0; padding: 6px 8px; font-size: 11.5px; height: 28px; margin-bottom: 8px;" placeholder="Leave blank to use layer name">
+              <div style="position: relative; width: 100%; margin-bottom: 8px;">
+                <input type="text" id="newVarName" class="rename-input" style="width: 100%; margin-right: 0; padding: 6px 28px 6px 8px; font-size: 11.5px; height: 28px; box-sizing: border-box;" placeholder="Leave blank to use layer name">
+                <button class="clear-input-btn" type="button" title="Clear" style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 2px; display: flex; align-items: center; color: var(--text-muted); opacity: 0.6; transition: opacity 150ms;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
+                  <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="12" height="12"><line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/></svg>
+                </button>
+              </div>
 
               <div id="newVarModes" style="display: flex; flex-direction: column; gap: 8px; width: 100%; margin-bottom: 8px;"></div>
               
@@ -1365,6 +1371,20 @@
         `;
         
         mainContent.appendChild(section);
+
+        // Prefill variable name from last selected bound variable
+        const newVarNameInput = section.querySelector("#newVarName");
+        if (newVarNameInput && lastBoundVariableName) {
+          newVarNameInput.value = lastBoundVariableName;
+        }
+        // Wire clear button for variable name
+        const newVarNameClearBtn = section.querySelector(".clear-input-btn");
+        if (newVarNameClearBtn) {
+          newVarNameClearBtn.addEventListener("click", () => {
+            newVarNameInput.value = "";
+            newVarNameInput.focus();
+          });
+        }
 
         const collectionSelect = section.querySelector("#newVarCollection");
         const modesContainer = section.querySelector("#newVarModes");
@@ -1382,13 +1402,33 @@
                   <span>${escHtml(mode.name)}</span>
                   <span style="color: var(--text-muted); font-size: 10px;">(Leave blank to auto-translate)</span>
                 </div>
-                <textarea class="mode-textarea create-mode-input" data-mode-id="${mode.modeId}" data-mode-name="${escHtml(mode.name)}" style="min-height: 28px; height: 28px; padding: 5px 8px; margin-bottom: 0;" placeholder="Text for ${escHtml(mode.name)}"></textarea>
+                <div style="position: relative; width: 100%;">
+                  <textarea class="mode-textarea create-mode-input" data-mode-id="${mode.modeId}" data-mode-name="${escHtml(mode.name)}" style="min-height: 28px; height: 28px; padding: 5px 28px 5px 8px; margin-bottom: 0; width: 100%; box-sizing: border-box;" placeholder="Text for ${escHtml(mode.name)}"></textarea>
+                  <button class="clear-input-btn" type="button" title="Clear" style="position: absolute; right: 6px; top: 8px; background: none; border: none; cursor: pointer; padding: 2px; display: flex; align-items: center; color: var(--text-muted); opacity: 0.6; transition: opacity 150ms;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
+                    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="12" height="12"><line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/></svg>
+                  </button>
+                </div>
               `;
+              const ta = row.querySelector("textarea");
+              if (ta && unboundNode && unboundNode.text) {
+                ta.value = unboundNode.text;
+                ta.style.height = "28px";
+                ta.style.height = ta.scrollHeight + "px";
+              }
+              // Wire clear button for this mode textarea
+              const clearBtn = row.querySelector(".clear-input-btn");
+              if (clearBtn && ta) {
+                clearBtn.addEventListener("click", () => {
+                  ta.value = "";
+                  ta.style.height = "28px";
+                  ta.focus();
+                });
+              }
               modesContainer.appendChild(row);
             });
             modesContainer.querySelectorAll("textarea").forEach(ta => {
               ta.addEventListener("input", () => {
-                ta.style.height = "28px"; // Reset to min height first to calculate correctly if text was deleted
+                ta.style.height = "28px";
                 ta.style.height = ta.scrollHeight + "px";
               });
             });
@@ -1763,6 +1803,7 @@
       if (copyBtn) {
         copyBtn.addEventListener("click", (e) => {
           e.stopPropagation();
+          lastBoundVariableName = variable.variableName;
           const textArea = document.createElement("textarea");
           textArea.value = variable.variableName;
           document.body.appendChild(textArea);
