@@ -280,7 +280,7 @@ async function scanSelection() {
         if (i % 20 === 0)
             await yieldIfNeeded();
         const textNode = textNodes[i];
-        const boundId = getTextBoundVariableId(textNode);
+        const boundId = getTextBoundVariableId(textNode) || getTextBoundVariableIdFromComponentProperty(textNode);
         if (boundId) {
             variableIds.add(boundId);
         }
@@ -447,6 +447,44 @@ function getTextBoundVariableId(node) {
         alias !== null &&
         "id" in alias) {
         return alias.id;
+    }
+    return null;
+}
+/**
+ * Fallback: detect text variable bindings that are set via a component TEXT
+ * property rather than directly on the TextNode's boundVariables.characters.
+ *
+ * When a component author exposes a text layer as a component property, the
+ * binding lives on the parent InstanceNode's componentProperties, not on the
+ * TextNode itself. We detect this by:
+ *   1. Reading textNode.componentPropertyReferences?.characters  → property key
+ *   2. Walking up to the nearest InstanceNode ancestor
+ *   3. Checking instanceNode.componentProperties[key].boundVariables?.value
+ */
+function getTextBoundVariableIdFromComponentProperty(node) {
+    const refs = node.componentPropertyReferences;
+    if (!refs || !refs["characters"])
+        return null;
+    const propKey = refs["characters"];
+    // Walk up the parent chain to find the nearest InstanceNode
+    let parent = node.parent;
+    while (parent) {
+        if (parent.type === "INSTANCE") {
+            const instance = parent;
+            const props = instance.componentProperties;
+            const prop = props === null || props === void 0 ? void 0 : props[propKey];
+            if (prop && prop.type === "TEXT") {
+                const bv = prop.boundVariables;
+                if (bv) {
+                    const valueAlias = bv["value"];
+                    if (valueAlias && typeof valueAlias === "object" && "id" in valueAlias) {
+                        return valueAlias.id;
+                    }
+                }
+            }
+            break; // Only check the nearest instance
+        }
+        parent = parent.parent;
     }
     return null;
 }

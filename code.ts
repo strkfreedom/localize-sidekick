@@ -492,7 +492,7 @@ async function scanSelection() {
   for (let i = 0; i < textNodes.length; i++) {
     if (i % 20 === 0) await yieldIfNeeded();
     const textNode = textNodes[i];
-    const boundId = getTextBoundVariableId(textNode);
+    const boundId = getTextBoundVariableId(textNode) || getTextBoundVariableIdFromComponentProperty(textNode);
     if (boundId) {
       variableIds.add(boundId);
     } else {
@@ -672,6 +672,47 @@ function getTextBoundVariableId(node: TextNode): string | null {
     "id" in alias
   ) {
     return (alias as VariableAlias).id;
+  }
+
+  return null;
+}
+
+/**
+ * Fallback: detect text variable bindings that are set via a component TEXT
+ * property rather than directly on the TextNode's boundVariables.characters.
+ *
+ * When a component author exposes a text layer as a component property, the
+ * binding lives on the parent InstanceNode's componentProperties, not on the
+ * TextNode itself. We detect this by:
+ *   1. Reading textNode.componentPropertyReferences?.characters  → property key
+ *   2. Walking up to the nearest InstanceNode ancestor
+ *   3. Checking instanceNode.componentProperties[key].boundVariables?.value
+ */
+function getTextBoundVariableIdFromComponentProperty(node: TextNode): string | null {
+  const refs = (node as any).componentPropertyReferences as Record<string, string> | null;
+  if (!refs || !refs["characters"]) return null;
+
+  const propKey = refs["characters"];
+
+  // Walk up the parent chain to find the nearest InstanceNode
+  let parent: BaseNode | null = node.parent;
+  while (parent) {
+    if (parent.type === "INSTANCE") {
+      const instance = parent as InstanceNode;
+      const props = instance.componentProperties as ComponentProperties;
+      const prop = props?.[propKey];
+      if (prop && prop.type === "TEXT") {
+        const bv = prop.boundVariables;
+        if (bv) {
+          const valueAlias = (bv as Record<string, unknown>)["value"];
+          if (valueAlias && typeof valueAlias === "object" && "id" in (valueAlias as object)) {
+            return (valueAlias as VariableAlias).id;
+          }
+        }
+      }
+      break; // Only check the nearest instance
+    }
+    parent = parent.parent;
   }
 
   return null;
