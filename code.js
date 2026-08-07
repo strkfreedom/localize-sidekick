@@ -264,16 +264,24 @@ figma.ui.onmessage = async (rawMsg) => {
             // FAST PATH: skip expensive external import if query is empty and we already have local results
             const skipExternal = (query === "" && collectionId === "all" && results.length > 0);
             if (!skipExternal) {
-                const extMatches = availableExternalVariables.filter(v => {
+                // Base filter: collection only (no name filter yet — we need to import to check values)
+                const extCandidates = availableExternalVariables.filter(v => {
                     if (disabledCollections.includes(v.collectionId))
                         return false;
                     if (collectionId !== "all" && collectionId !== "external" && v.collectionId !== collectionId)
                         return false;
-                    return v.name.toLowerCase().includes(query);
+                    return true;
                 });
-                // Limit to first 20 to avoid freezing
-                const limitedExt = extMatches.slice(0, 20);
-                for (const extVar of limitedExt) {
+                // Prioritise name matches so they always appear first; add non-name-matches for value search
+                const nameMatches = query ? extCandidates.filter(v => v.name.toLowerCase().includes(query)) : extCandidates;
+                const nonNameMatches = query ? extCandidates.filter(v => !v.name.toLowerCase().includes(query)) : [];
+                // When searching with a query: import all candidates (name matches first), capped at 300 to avoid freezing.
+                // Without a query: only show the first 20 as a default preview.
+                const cap = query ? 300 : 20;
+                const toImport = query
+                    ? [...nameMatches, ...nonNameMatches].slice(0, cap)
+                    : nameMatches.slice(0, cap);
+                for (const extVar of toImport) {
                     try {
                         // Lazily import to get value
                         const importedVar = await figma.variables.importVariableByKeyAsync(extVar.key);
@@ -290,6 +298,10 @@ figma.ui.onmessage = async (rawMsg) => {
                             if (typeof modeVal === "string")
                                 val = modeVal;
                         }
+                        // Post-import filter: must match query by name OR value
+                        if (query && !extVar.name.toLowerCase().includes(query) && !val.toLowerCase().includes(query)) {
+                            continue;
+                        }
                         results.push({
                             id: importedVar.id,
                             name: extVar.name,
@@ -305,9 +317,33 @@ figma.ui.onmessage = async (rawMsg) => {
                 }
             } // close !skipExternal
         }
-        results.sort((a, b) => a.name.localeCompare(b.name));
-        if (query === "") {
-            results = results.slice(0, 10);
+        // Sort: if nodeText provided, exact value match first, partial match next, then alphabetical
+        const nodeText = (msg.nodeText || "").toLowerCase().trim();
+        if (nodeText && results.length > 0) {
+            const hasAnyMatch = results.some(r => r.value.toLowerCase().includes(nodeText));
+            if (hasAnyMatch) {
+                // Sort: exact match → partial match → rest (alphabetical within each group)
+                results.sort((a, b) => {
+                    const aVal = a.value.toLowerCase();
+                    const bVal = b.value.toLowerCase();
+                    const aScore = aVal === nodeText ? 0 : (aVal.includes(nodeText) ? 1 : 2);
+                    const bScore = bVal === nodeText ? 0 : (bVal.includes(nodeText) ? 1 : 2);
+                    if (aScore !== bScore)
+                        return aScore - bScore;
+                    return a.name.localeCompare(b.name);
+                });
+            }
+            else {
+                // No value matches — fall back to default top-10 alphabetical list
+                results.sort((a, b) => a.name.localeCompare(b.name));
+                results = results.slice(0, 10);
+            }
+        }
+        else {
+            results.sort((a, b) => a.name.localeCompare(b.name));
+            if (query === "") {
+                results = results.slice(0, 10);
+            }
         }
         sendToUI({ type: "search-link-variables-result", results });
         return;

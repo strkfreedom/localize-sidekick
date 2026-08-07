@@ -1684,7 +1684,10 @@
                     <circle cx="7" cy="7" r="4.5" />
                     <line x1="10.5" y1="10.5" x2="14" y2="14" />
                   </svg>
-                  <input type="text" id="linkVarSearch" class="search-input" placeholder="Search variables & values" spellcheck="false" style="width: 100%; padding: 6px 8px 6px 28px; box-sizing: border-box; font-size: 11px;" />
+                  <input type="text" id="linkVarSearch" class="search-input" placeholder="Search variables & values" spellcheck="false" style="width: 100%; padding: 6px 28px 6px 28px; box-sizing: border-box; font-size: 11px;" />
+                  <button id="linkVarSearchClear" type="button" title="Clear" style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 2px; display: none; align-items: center; color: var(--text-muted); opacity: 0.6; transition: opacity 150ms;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
+                    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="12" height="12"><line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/></svg>
+                  </button>
                 </div>
                 <select id="linkVarCollectionFilter" class="select-dropdown" style="width: 180px; margin-bottom: 0;">
                   <!-- Populated later from externalCollections and localCollections -->
@@ -1717,7 +1720,7 @@
               
               <label style="font-size: 11px; font-weight: 500;">Variable Name</label>
               <div style="position: relative; width: 100%; margin-bottom: 8px;">
-                <input type="text" id="newVarName" class="rename-input" style="width: 100%; margin-right: 0; padding: 6px 28px 6px 8px; font-size: 11.5px; height: 28px; box-sizing: border-box;" placeholder="Leave blank to use layer name">
+                <input type="text" id="newVarName" class="rename-input" style="width: 100%; margin-right: 0; padding: 6px 28px 6px 8px; font-size: 11.5px; height: 28px; box-sizing: border-box;" placeholder="Copy variable names to automatically paste here">
                 <button class="clear-input-btn" type="button" title="Clear" style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 2px; display: flex; align-items: center; color: var(--text-muted); opacity: 0.6; transition: opacity 150ms;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
                   <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="12" height="12"><line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/></svg>
                 </button>
@@ -1748,20 +1751,41 @@
         }
 
         let linkVarTimeout;
+        // Compute the node's text once for use in both pre-fill and search sorting
+        const singleUnboundNodeText = unboundNode
+          ? (unboundNode.text || "")
+          : (allUnbound && currentUnboundNodes.length === 1 ? (currentUnboundNodes[0].text || "") : "");
+
         const triggerSearch = () => {
           clearTimeout(linkVarTimeout);
           linkVarTimeout = setTimeout(() => {
             const query = linkVarSearch.value.trim();
             const collectionId = linkVarCollectionFilter.value;
             const previewModeName = previewModeSelect ? previewModeSelect.value : selectedPreviewMode;
+            // Pass the node's original text so the backend can sort by value match (only when search is empty)
+            const nodeText = (!query) ? singleUnboundNodeText : "";
             
             linkVarResults.innerHTML = `<div style="padding: 12px; text-align: center; color: var(--text-muted); font-size: 11px;">Searching...</div>`;
-            parent.postMessage({ pluginMessage: { type: "search-link-variables", query, collectionId, previewModeName } }, "*");
+            parent.postMessage({ pluginMessage: { type: "search-link-variables", query, collectionId, previewModeName, nodeText } }, "*");
           }, 300);
         };
 
         if (linkVarSearch) {
-          linkVarSearch.addEventListener("input", triggerSearch);
+          linkVarSearch.addEventListener("input", () => {
+            const clearBtn = section.querySelector("#linkVarSearchClear");
+            if (clearBtn) clearBtn.style.display = linkVarSearch.value ? "flex" : "none";
+            triggerSearch();
+          });
+        }
+
+        const linkVarSearchClear = section.querySelector("#linkVarSearchClear");
+        if (linkVarSearchClear) {
+          linkVarSearchClear.addEventListener("click", () => {
+            linkVarSearch.value = "";
+            linkVarSearchClear.style.display = "none";
+            linkVarSearch.focus();
+            triggerSearch();
+          });
         }
         if (linkVarCollectionFilter) {
           linkVarCollectionFilter.addEventListener("change", triggerSearch);
@@ -1828,7 +1852,11 @@
           linkVarCollectionFilter.addEventListener("change", triggerSearch);
         }
 
-        // We will also need to populate linkVarCollectionFilter when externalCollections arrive, or trigger an initial search.
+        // Pre-fill search with the single unbound node's text for immediate relevant results
+        if (singleUnboundNodeText) {
+          linkVarSearch.value = singleUnboundNodeText;
+          if (linkVarSearchClear) linkVarSearchClear.style.display = "flex";
+        }
         triggerSearch();
         // --- End Link Variable Wiring ---
 
