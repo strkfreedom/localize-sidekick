@@ -335,7 +335,7 @@ async function initPlugin() {
   // Load libraries in background and notify UI
   ensureLibraryMaps().then(() => {
     sendToUI({ type: "external-collections-loaded", externalCollections: availableExternalCollections, disabledCollections });
-  });
+  }).catch(console.error);
 
   let currentSelectionIds = "";
 
@@ -346,11 +346,11 @@ async function initPlugin() {
     if (ids === currentSelectionIds) return;
     
     currentSelectionIds = ids;
-    scanSelection();
+    scanSelection().catch(console.error);
   });
 }
 
-initPlugin();
+initPlugin().catch(console.error);
 
 // Handle messages from the UI
 figma.ui.onmessage = async (rawMsg: unknown) => {
@@ -366,7 +366,8 @@ figma.ui.onmessage = async (rawMsg: unknown) => {
     return;
   }
 
-  if (msg.type === "save-resize") {
+  try {
+    if (msg.type === "save-resize") {
     await figma.clientStorage.setAsync("pluginSize", { width: msg.width, height: msg.height });
     return;
   }
@@ -788,6 +789,10 @@ figma.ui.onmessage = async (rawMsg: unknown) => {
     }
     return;
   }
+  } catch (error) {
+    console.error("Unhandled error in message handler for type:", msg.type, error);
+    sendToUI({ type: "status", message: `Error processing ${msg.type}: ${String(error)}`, isError: true });
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -963,7 +968,32 @@ async function yieldIfNeeded() {
   }
 }
 
+type CancelToken = { cancelled: boolean };
+let currentScanToken: CancelToken | null = null;
+
 async function scanSelection() {
+  if (currentScanToken) {
+    currentScanToken.cancelled = true;
+  }
+  
+  const token: CancelToken = { cancelled: false };
+  currentScanToken = token;
+  
+  try {
+    await doScanSelection(token);
+  } catch (error) {
+    if (token.cancelled) return;
+    console.error("Error during scanSelection:", error);
+    sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections, bindCollectionFilter: bindCollectionFilterVal });
+  } finally {
+    if (currentScanToken === token) {
+      currentScanToken = null;
+    }
+  }
+}
+
+async function doScanSelection(token: CancelToken) {
+  if (token.cancelled) throw new Error("cancelled");
   const selection = figma.currentPage.selection;
 
   const collections = await figma.variables.getLocalVariableCollectionsAsync();
@@ -986,9 +1016,11 @@ async function scanSelection() {
   sendToUI({ type: "loading-start" });
   await new Promise(resolve => setTimeout(resolve, 30));
 
+  if (token.cancelled) throw new Error("cancelled");
   const textNodes: TextNode[] = [];
   for (const node of selection) {
-    await collectTextNodes(node, textNodes);
+    if (token.cancelled) throw new Error("cancelled");
+    await collectTextNodes(node, textNodes, token);
   }
 
   if (textNodes.length === 0) {
@@ -1001,7 +1033,10 @@ async function scanSelection() {
   const allUnboundNodes: UnboundNodeInfo[] = [];
 
   for (let i = 0; i < textNodes.length; i++) {
-    if (i % 20 === 0) await yieldIfNeeded();
+    if (i % 20 === 0) {
+      if (token.cancelled) throw new Error("cancelled");
+      await yieldIfNeeded();
+    }
     const textNode = textNodes[i];
     const boundId = getTextBoundVariableId(textNode) || getTextBoundVariableIdFromComponentProperty(textNode);
     if (boundId) {
@@ -1037,7 +1072,7 @@ async function scanSelection() {
   loadedVariableCount = 0;
   activeAllUnbound = allUnbound;
 
-  await fetchAndSendNextBatch(true);
+  await fetchAndSendNextBatch(true, token);
 }
 
 function getStandardLanguageName(name: string): string {
@@ -1061,7 +1096,8 @@ function getStandardLanguageName(name: string): string {
   return name.trim();
 }
 
-async function fetchAndSendNextBatch(isInitial: boolean) {
+async function fetchAndSendNextBatch(isInitial: boolean, token?: CancelToken) {
+  if (token?.cancelled) throw new Error("cancelled");
   const idsToFetch = activeVariableIds.slice(loadedVariableCount, loadedVariableCount + BATCH_SIZE);
 
   if (idsToFetch.length === 0) {
@@ -1186,7 +1222,8 @@ async function fetchAndSendNextBatch(isInitial: boolean) {
 /**
  * Collects TEXT nodes from selected nodes. Uses native findAllWithCriteria for performance.
  */
-async function collectTextNodes(node: SceneNode, acc: TextNode[]): Promise<void> {
+async function collectTextNodes(node: SceneNode, acc: TextNode[], token?: CancelToken): Promise<void> {
+  if (token?.cancelled) throw new Error("cancelled");
   if (isNodeIgnored(node)) return;
 
   if (node.type === "TEXT") {
@@ -1194,8 +1231,12 @@ async function collectTextNodes(node: SceneNode, acc: TextNode[]): Promise<void>
   } else if ("children" in node) {
     const children = (node as any).children;
     for (let i = 0; i < children.length; i++) {
-      if (i % 20 === 0) await yieldIfNeeded();
-      await collectTextNodes(children[i], acc);
+    if (i % 5 === 0) {
+      if (token?.cancelled) throw new Error("cancelled");
+      await yieldIfNeeded();
+    }
+      if (token?.cancelled) throw new Error("cancelled");
+      await collectTextNodes(children[i], acc, token);
     }
   }
 }

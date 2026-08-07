@@ -77,7 +77,7 @@ async function initPlugin() {
     // Load libraries in background and notify UI
     ensureLibraryMaps().then(() => {
         sendToUI({ type: "external-collections-loaded", externalCollections: availableExternalCollections, disabledCollections });
-    });
+    }).catch(console.error);
     let currentSelectionIds = "";
     // Re-scan whenever selection changes
     figma.on("selectionchange", () => {
@@ -86,10 +86,10 @@ async function initPlugin() {
         if (ids === currentSelectionIds)
             return;
         currentSelectionIds = ids;
-        scanSelection();
+        scanSelection().catch(console.error);
     });
 }
-initPlugin();
+initPlugin().catch(console.error);
 // Handle messages from the UI
 figma.ui.onmessage = async (rawMsg) => {
     const msg = rawMsg;
@@ -101,232 +101,164 @@ figma.ui.onmessage = async (rawMsg) => {
         figma.ui.resize(msg.width, msg.height);
         return;
     }
-    if (msg.type === "save-resize") {
-        await figma.clientStorage.setAsync("pluginSize", { width: msg.width, height: msg.height });
-        return;
-    }
-    if (msg.type === "load-more") {
-        await fetchAndSendNextBatch(false);
-        return;
-    }
-    if (msg.type === "switch-tab") {
-        activeTab = msg.tabId;
-        await figma.clientStorage.setAsync("activeTab", activeTab);
-        return;
-    }
-    if (msg.type === "load-more-unbound") {
-        scanAllUnbound = true;
-        await scanSelection();
-        return;
-    }
-    if (msg.type === "select-node") {
-        const node = await figma.getNodeByIdAsync(msg.nodeId);
-        if (node && node.type === "TEXT") {
-            figma.currentPage.selection = [node];
-            figma.viewport.scrollAndZoomIntoView([node]);
+    try {
+        if (msg.type === "save-resize") {
+            await figma.clientStorage.setAsync("pluginSize", { width: msg.width, height: msg.height });
+            return;
         }
-        return;
-    }
-    if (msg.type === "select-multiple-nodes") {
-        const nodes = await Promise.all(msg.nodeIds.map(id => figma.getNodeByIdAsync(id)));
-        const textNodes = nodes.filter(n => n && n.type === "TEXT");
-        if (textNodes.length > 0) {
-            figma.currentPage.selection = textNodes;
+        if (msg.type === "load-more") {
+            await fetchAndSendNextBatch(false);
+            return;
         }
-        return;
-    }
-    if (msg.type === "refresh") {
-        await scanSelection();
-        return;
-    }
-    if (msg.type === "update-negative-list") {
-        negativeList = msg.list;
-        await figma.clientStorage.setAsync("negativeList", negativeList);
-        await scanSelection();
-        return;
-    }
-    if (msg.type === "update-collection-filter") {
-        collectionFilterVal = msg.filter;
-        const today = new Date().toLocaleDateString("en-CA");
-        await figma.clientStorage.setAsync("collectionFilter", { value: collectionFilterVal, date: today });
-        return;
-    }
-    if (msg.type === "update-auto-apply") {
-        autoApplyVal = msg.value;
-        await figma.clientStorage.setAsync("autoApply", autoApplyVal);
-        return;
-    }
-    if (msg.type === "update-default-create-collection") {
-        defaultCreateCollectionId = msg.collectionId;
-        await figma.clientStorage.setAsync("defaultCreateCollectionId", defaultCreateCollectionId);
-        return;
-    }
-    if (msg.type === "update-default-bind-collection") {
-        defaultBindCollectionId = msg.collectionId;
-        await figma.clientStorage.setAsync("defaultBindCollectionId", defaultBindCollectionId);
-        return;
-    }
-    if (msg.type === "apply-multiple") {
-        let hasChanges = false;
-        for (const update of msg.updates) {
+        if (msg.type === "switch-tab") {
+            activeTab = msg.tabId;
+            await figma.clientStorage.setAsync("activeTab", activeTab);
+            return;
+        }
+        if (msg.type === "load-more-unbound") {
+            scanAllUnbound = true;
+            await scanSelection();
+            return;
+        }
+        if (msg.type === "select-node") {
+            const node = await figma.getNodeByIdAsync(msg.nodeId);
+            if (node && node.type === "TEXT") {
+                figma.currentPage.selection = [node];
+                figma.viewport.scrollAndZoomIntoView([node]);
+            }
+            return;
+        }
+        if (msg.type === "select-multiple-nodes") {
+            const nodes = await Promise.all(msg.nodeIds.map(id => figma.getNodeByIdAsync(id)));
+            const textNodes = nodes.filter(n => n && n.type === "TEXT");
+            if (textNodes.length > 0) {
+                figma.currentPage.selection = textNodes;
+            }
+            return;
+        }
+        if (msg.type === "refresh") {
+            await scanSelection();
+            return;
+        }
+        if (msg.type === "update-negative-list") {
+            negativeList = msg.list;
+            await figma.clientStorage.setAsync("negativeList", negativeList);
+            await scanSelection();
+            return;
+        }
+        if (msg.type === "update-collection-filter") {
+            collectionFilterVal = msg.filter;
+            const today = new Date().toLocaleDateString("en-CA");
+            await figma.clientStorage.setAsync("collectionFilter", { value: collectionFilterVal, date: today });
+            return;
+        }
+        if (msg.type === "update-auto-apply") {
+            autoApplyVal = msg.value;
+            await figma.clientStorage.setAsync("autoApply", autoApplyVal);
+            return;
+        }
+        if (msg.type === "update-default-create-collection") {
+            defaultCreateCollectionId = msg.collectionId;
+            await figma.clientStorage.setAsync("defaultCreateCollectionId", defaultCreateCollectionId);
+            return;
+        }
+        if (msg.type === "update-default-bind-collection") {
+            defaultBindCollectionId = msg.collectionId;
+            await figma.clientStorage.setAsync("defaultBindCollectionId", defaultBindCollectionId);
+            return;
+        }
+        if (msg.type === "apply-multiple") {
+            let hasChanges = false;
+            for (const update of msg.updates) {
+                try {
+                    const variable = await figma.variables.getVariableByIdAsync(update.variableId);
+                    if (variable && variable.resolvedType === "STRING") {
+                        variable.setValueForMode(update.modeId, update.value);
+                        hasChanges = true;
+                    }
+                }
+                catch (err) {
+                    console.error("Error applying variable", update.variableId, err);
+                }
+            }
+            if (hasChanges && !msg.skipScan) {
+                await scanSelection();
+            }
+            return;
+        }
+        if (msg.type === "rename-variable") {
             try {
-                const variable = await figma.variables.getVariableByIdAsync(update.variableId);
+                const variable = await figma.variables.getVariableByIdAsync(msg.variableId);
                 if (variable && variable.resolvedType === "STRING") {
-                    variable.setValueForMode(update.modeId, update.value);
-                    hasChanges = true;
+                    variable.name = msg.newName;
+                    await scanSelection();
                 }
             }
             catch (err) {
-                console.error("Error applying variable", update.variableId, err);
+                console.error("Error renaming variable", msg.variableId, err);
+                let errMsg = String(err);
+                if (errMsg.includes("already exists"))
+                    errMsg = "Name already exists";
+                sendToUI({ type: "rename-error", variableId: msg.variableId, message: errMsg });
             }
+            return;
         }
-        if (hasChanges && !msg.skipScan) {
-            await scanSelection();
-        }
-        return;
-    }
-    if (msg.type === "rename-variable") {
-        try {
-            const variable = await figma.variables.getVariableByIdAsync(msg.variableId);
-            if (variable && variable.resolvedType === "STRING") {
-                variable.name = msg.newName;
-                await scanSelection();
-            }
-        }
-        catch (err) {
-            console.error("Error renaming variable", msg.variableId, err);
-            let errMsg = String(err);
-            if (errMsg.includes("already exists"))
-                errMsg = "Name already exists";
-            sendToUI({ type: "rename-error", variableId: msg.variableId, message: errMsg });
-        }
-        return;
-    }
-    if (msg.type === "delete-variable") {
-        try {
-            const variable = await figma.variables.getVariableByIdAsync(msg.variableId);
-            if (variable && variable.resolvedType === "STRING") {
-                // Detach selected text nodes bound to this variable
-                const selectedTextNodes = [];
-                for (const node of figma.currentPage.selection) {
-                    await collectTextNodes(node, selectedTextNodes);
-                }
-                for (const textNode of selectedTextNodes) {
-                    if (getTextBoundVariableId(textNode) === msg.variableId) {
-                        await figma.loadFontAsync(textNode.fontName);
-                        textNode.setBoundVariable("characters", null);
+        if (msg.type === "delete-variable") {
+            try {
+                const variable = await figma.variables.getVariableByIdAsync(msg.variableId);
+                if (variable && variable.resolvedType === "STRING") {
+                    // Detach selected text nodes bound to this variable
+                    const selectedTextNodes = [];
+                    for (const node of figma.currentPage.selection) {
+                        await collectTextNodes(node, selectedTextNodes);
                     }
-                }
-                variable.remove();
-                sendToUI({ type: "status", message: "Variable deleted and detached" });
-                await scanSelection();
-            }
-            else {
-                sendToUI({ type: "status", message: "Variable not found", isError: true });
-            }
-        }
-        catch (err) {
-            console.error("Error deleting variable", msg.variableId, err);
-            sendToUI({ type: "status", message: "Failed to delete variable: " + err, isError: true });
-        }
-        return;
-    }
-    if (msg.type === "update-disabled-collections") {
-        disabledCollections = msg.disabledCollections;
-        await figma.clientStorage.setAsync("disabledCollections", disabledCollections);
-        return;
-    }
-    if (msg.type === "save-bind-collection-filter") {
-        bindCollectionFilterVal = msg.value;
-        const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local timezone
-        await figma.clientStorage.setAsync("bindCollectionFilter", { value: msg.value, date: today });
-        return;
-    }
-    if (msg.type === "search-link-variables") {
-        const query = (msg.query || "").toLowerCase();
-        const nodeText = (msg.nodeText || "").toLowerCase().trim();
-        const collectionId = msg.collectionId || "all";
-        let results = [];
-        const searchModes = new Set();
-        // 1. Search local variables
-        if (collectionId !== "external") {
-            const localVars = await figma.variables.getLocalVariablesAsync("STRING");
-            for (const v of localVars) {
-                if (disabledCollections.includes(v.variableCollectionId))
-                    continue;
-                if (collectionId !== "all" && collectionId !== "local" && v.variableCollectionId !== collectionId)
-                    continue;
-                if (collectionId === "all" || collectionId === "local" || v.variableCollectionId === collectionId) {
-                    const col = await getCachedCollection(v.variableCollectionId);
-                    let val = "";
-                    if (col && col.modes.length > 0) {
-                        col.modes.forEach(m => searchModes.add(getStandardLanguageName(m.name)));
-                        let targetModeId = col.modes[0].modeId;
-                        if (msg.previewModeName) {
-                            const foundMode = col.modes.find(m => getStandardLanguageName(m.name) === msg.previewModeName);
-                            if (foundMode)
-                                targetModeId = foundMode.modeId;
-                        }
-                        const modeVal = v.valuesByMode[targetModeId];
-                        if (typeof modeVal === "string")
-                            val = modeVal;
-                    }
-                    let anyModeMatches = false;
-                    let matchScore = 2;
-                    for (const modeId in v.valuesByMode) {
-                        const mVal = v.valuesByMode[modeId];
-                        if (typeof mVal === "string") {
-                            const ml = mVal.toLowerCase();
-                            if (ml.includes(query))
-                                anyModeMatches = true;
-                            if (nodeText) {
-                                if (ml === nodeText)
-                                    matchScore = 0;
-                                else if (ml.includes(nodeText) && matchScore > 1)
-                                    matchScore = 1;
-                            }
+                    for (const textNode of selectedTextNodes) {
+                        if (getTextBoundVariableId(textNode) === msg.variableId) {
+                            await figma.loadFontAsync(textNode.fontName);
+                            textNode.setBoundVariable("characters", null);
                         }
                     }
-                    if (v.name.toLowerCase().includes(query) || anyModeMatches) {
-                        results.push({
-                            id: v.id,
-                            name: v.name,
-                            collectionName: `Local / ${col ? col.name : "Unknown"}`,
-                            value: val,
-                            isExternal: false,
-                            matchScore
-                        });
-                    }
+                    variable.remove();
+                    sendToUI({ type: "status", message: "Variable deleted and detached" });
+                    await scanSelection();
+                }
+                else {
+                    sendToUI({ type: "status", message: "Variable not found", isError: true });
                 }
             }
+            catch (err) {
+                console.error("Error deleting variable", msg.variableId, err);
+                sendToUI({ type: "status", message: "Failed to delete variable: " + err, isError: true });
+            }
+            return;
         }
-        // 2. Search external variables
-        if (collectionId !== "local") {
-            // FAST PATH: skip expensive external import if query is empty and we already have local results
-            const skipExternal = (query === "" && collectionId === "all" && results.length > 0);
-            if (!skipExternal) {
-                // Base filter: collection only (no name filter yet — we need to import to check values)
-                const extCandidates = availableExternalVariables.filter(v => {
-                    if (disabledCollections.includes(v.collectionId))
-                        return false;
-                    if (collectionId !== "all" && collectionId !== "external" && v.collectionId !== collectionId)
-                        return false;
-                    return true;
-                });
-                // Prioritise name matches so they always appear first; add non-name-matches for value search
-                const nameMatches = query ? extCandidates.filter(v => v.name.toLowerCase().includes(query)) : extCandidates;
-                const nonNameMatches = query ? extCandidates.filter(v => !v.name.toLowerCase().includes(query)) : [];
-                // When searching with a query: import all candidates (name matches first), capped at 300 to avoid freezing.
-                // Without a query: only show the first 20 as a default preview.
-                const cap = query ? 300 : 20;
-                const toImport = query
-                    ? [...nameMatches, ...nonNameMatches].slice(0, cap)
-                    : nameMatches.slice(0, cap);
-                for (const extVar of toImport) {
-                    try {
-                        // Lazily import to get value
-                        const importedVar = await figma.variables.importVariableByKeyAsync(extVar.key);
-                        const col = await figma.variables.getVariableCollectionByIdAsync(importedVar.variableCollectionId);
+        if (msg.type === "update-disabled-collections") {
+            disabledCollections = msg.disabledCollections;
+            await figma.clientStorage.setAsync("disabledCollections", disabledCollections);
+            return;
+        }
+        if (msg.type === "save-bind-collection-filter") {
+            bindCollectionFilterVal = msg.value;
+            const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local timezone
+            await figma.clientStorage.setAsync("bindCollectionFilter", { value: msg.value, date: today });
+            return;
+        }
+        if (msg.type === "search-link-variables") {
+            const query = (msg.query || "").toLowerCase();
+            const nodeText = (msg.nodeText || "").toLowerCase().trim();
+            const collectionId = msg.collectionId || "all";
+            let results = [];
+            const searchModes = new Set();
+            // 1. Search local variables
+            if (collectionId !== "external") {
+                const localVars = await figma.variables.getLocalVariablesAsync("STRING");
+                for (const v of localVars) {
+                    if (disabledCollections.includes(v.variableCollectionId))
+                        continue;
+                    if (collectionId !== "all" && collectionId !== "local" && v.variableCollectionId !== collectionId)
+                        continue;
+                    if (collectionId === "all" || collectionId === "local" || v.variableCollectionId === collectionId) {
+                        const col = await getCachedCollection(v.variableCollectionId);
                         let val = "";
                         if (col && col.modes.length > 0) {
                             col.modes.forEach(m => searchModes.add(getStandardLanguageName(m.name)));
@@ -336,14 +268,14 @@ figma.ui.onmessage = async (rawMsg) => {
                                 if (foundMode)
                                     targetModeId = foundMode.modeId;
                             }
-                            const modeVal = importedVar.valuesByMode[targetModeId];
+                            const modeVal = v.valuesByMode[targetModeId];
                             if (typeof modeVal === "string")
                                 val = modeVal;
                         }
                         let anyModeMatches = false;
                         let matchScore = 2;
-                        for (const modeId in importedVar.valuesByMode) {
-                            const mVal = importedVar.valuesByMode[modeId];
+                        for (const modeId in v.valuesByMode) {
+                            const mVal = v.valuesByMode[modeId];
                             if (typeof mVal === "string") {
                                 const ml = mVal.toLowerCase();
                                 if (ml.includes(query))
@@ -356,137 +288,167 @@ figma.ui.onmessage = async (rawMsg) => {
                                 }
                             }
                         }
-                        // Post-import filter: must match query by name OR value
-                        if (query && !extVar.name.toLowerCase().includes(query) && !anyModeMatches) {
-                            continue;
+                        if (v.name.toLowerCase().includes(query) || anyModeMatches) {
+                            results.push({
+                                id: v.id,
+                                name: v.name,
+                                collectionName: `Local / ${col ? col.name : "Unknown"}`,
+                                value: val,
+                                isExternal: false,
+                                matchScore
+                            });
                         }
-                        results.push({
-                            id: importedVar.id,
-                            name: extVar.name,
-                            collectionName: extVar.collectionName,
-                            value: val,
-                            isExternal: true,
-                            key: extVar.key,
-                            matchScore
-                        });
-                    }
-                    catch (e) {
-                        console.warn("Failed to import variable for preview", e);
                     }
                 }
-            } // close !skipExternal
-        }
-        // Sort: if nodeText provided, exact value match first, partial match next, then alphabetical
-        if (nodeText && results.length > 0) {
-            const hasAnyMatch = results.some(r => r.matchScore !== undefined && r.matchScore < 2);
-            if (hasAnyMatch) {
-                // Sort: exact match → partial match → rest (alphabetical within each group)
-                results.sort((a, b) => {
-                    var _a, _b;
-                    const aScore = (_a = a.matchScore) !== null && _a !== void 0 ? _a : 2;
-                    const bScore = (_b = b.matchScore) !== null && _b !== void 0 ? _b : 2;
-                    if (aScore !== bScore)
-                        return aScore - bScore;
-                    return a.name.localeCompare(b.name);
-                });
+            }
+            // 2. Search external variables
+            if (collectionId !== "local") {
+                // FAST PATH: skip expensive external import if query is empty and we already have local results
+                const skipExternal = (query === "" && collectionId === "all" && results.length > 0);
+                if (!skipExternal) {
+                    // Base filter: collection only (no name filter yet — we need to import to check values)
+                    const extCandidates = availableExternalVariables.filter(v => {
+                        if (disabledCollections.includes(v.collectionId))
+                            return false;
+                        if (collectionId !== "all" && collectionId !== "external" && v.collectionId !== collectionId)
+                            return false;
+                        return true;
+                    });
+                    // Prioritise name matches so they always appear first; add non-name-matches for value search
+                    const nameMatches = query ? extCandidates.filter(v => v.name.toLowerCase().includes(query)) : extCandidates;
+                    const nonNameMatches = query ? extCandidates.filter(v => !v.name.toLowerCase().includes(query)) : [];
+                    // When searching with a query: import all candidates (name matches first), capped at 300 to avoid freezing.
+                    // Without a query: only show the first 20 as a default preview.
+                    const cap = query ? 300 : 20;
+                    const toImport = query
+                        ? [...nameMatches, ...nonNameMatches].slice(0, cap)
+                        : nameMatches.slice(0, cap);
+                    for (const extVar of toImport) {
+                        try {
+                            // Lazily import to get value
+                            const importedVar = await figma.variables.importVariableByKeyAsync(extVar.key);
+                            const col = await figma.variables.getVariableCollectionByIdAsync(importedVar.variableCollectionId);
+                            let val = "";
+                            if (col && col.modes.length > 0) {
+                                col.modes.forEach(m => searchModes.add(getStandardLanguageName(m.name)));
+                                let targetModeId = col.modes[0].modeId;
+                                if (msg.previewModeName) {
+                                    const foundMode = col.modes.find(m => getStandardLanguageName(m.name) === msg.previewModeName);
+                                    if (foundMode)
+                                        targetModeId = foundMode.modeId;
+                                }
+                                const modeVal = importedVar.valuesByMode[targetModeId];
+                                if (typeof modeVal === "string")
+                                    val = modeVal;
+                            }
+                            let anyModeMatches = false;
+                            let matchScore = 2;
+                            for (const modeId in importedVar.valuesByMode) {
+                                const mVal = importedVar.valuesByMode[modeId];
+                                if (typeof mVal === "string") {
+                                    const ml = mVal.toLowerCase();
+                                    if (ml.includes(query))
+                                        anyModeMatches = true;
+                                    if (nodeText) {
+                                        if (ml === nodeText)
+                                            matchScore = 0;
+                                        else if (ml.includes(nodeText) && matchScore > 1)
+                                            matchScore = 1;
+                                    }
+                                }
+                            }
+                            // Post-import filter: must match query by name OR value
+                            if (query && !extVar.name.toLowerCase().includes(query) && !anyModeMatches) {
+                                continue;
+                            }
+                            results.push({
+                                id: importedVar.id,
+                                name: extVar.name,
+                                collectionName: extVar.collectionName,
+                                value: val,
+                                isExternal: true,
+                                key: extVar.key,
+                                matchScore
+                            });
+                        }
+                        catch (e) {
+                            console.warn("Failed to import variable for preview", e);
+                        }
+                    }
+                } // close !skipExternal
+            }
+            // Sort: if nodeText provided, exact value match first, partial match next, then alphabetical
+            if (nodeText && results.length > 0) {
+                const hasAnyMatch = results.some(r => r.matchScore !== undefined && r.matchScore < 2);
+                if (hasAnyMatch) {
+                    // Sort: exact match → partial match → rest (alphabetical within each group)
+                    results.sort((a, b) => {
+                        var _a, _b;
+                        const aScore = (_a = a.matchScore) !== null && _a !== void 0 ? _a : 2;
+                        const bScore = (_b = b.matchScore) !== null && _b !== void 0 ? _b : 2;
+                        if (aScore !== bScore)
+                            return aScore - bScore;
+                        return a.name.localeCompare(b.name);
+                    });
+                }
+                else {
+                    // No value matches — fall back to default top-10 alphabetical list
+                    results.sort((a, b) => a.name.localeCompare(b.name));
+                    results = results.slice(0, 10);
+                }
             }
             else {
-                // No value matches — fall back to default top-10 alphabetical list
                 results.sort((a, b) => a.name.localeCompare(b.name));
-                results = results.slice(0, 10);
-            }
-        }
-        else {
-            results.sort((a, b) => a.name.localeCompare(b.name));
-            if (query === "") {
-                results = results.slice(0, 10);
-            }
-        }
-        sendToUI({ type: "search-link-variables-result", results, searchModes: Array.from(searchModes) });
-        return;
-    }
-    if (msg.type === "unbind-variable") {
-        try {
-            const textNodes = [];
-            for (const node of figma.currentPage.selection) {
-                await collectTextNodes(node, textNodes);
-            }
-            let unbound = 0;
-            for (const textNode of textNodes) {
-                const boundId = getTextBoundVariableId(textNode) || getTextBoundVariableIdFromComponentProperty(textNode);
-                if (boundId === msg.variableId) {
-                    await figma.loadFontAsync(textNode.fontName);
-                    textNode.setBoundVariable("characters", null);
-                    unbound++;
+                if (query === "") {
+                    results = results.slice(0, 10);
                 }
             }
-            if (unbound > 0) {
-                sendToUI({ type: "status", message: "Unbound variable" });
-                await scanSelection();
-            }
-            else {
-                sendToUI({ type: "status", message: "No matching label found in selection", isError: true });
-            }
+            sendToUI({ type: "search-link-variables-result", results, searchModes: Array.from(searchModes) });
+            return;
         }
-        catch (e) {
-            console.error("Error unbinding variable", e);
-            sendToUI({ type: "status", message: "Failed to unbind: " + e, isError: true });
-        }
-        return;
-    }
-    if (msg.type === "bind-existing-variable") {
-        try {
-            let varId = msg.variableId;
-            if (msg.isExternal && msg.key) {
-                const importedVar = await figma.variables.importVariableByKeyAsync(msg.key);
-                varId = importedVar.id;
-            }
-            const variable = await figma.variables.getVariableByIdAsync(varId);
-            if (!variable)
-                throw new Error("Variable not found");
-            // Multi-node binding (all selected items unbound)
-            const nodeIds = msg.nodeIds && msg.nodeIds.length > 0
-                ? msg.nodeIds
-                : activeUnboundNode ? [activeUnboundNode.id] : [];
-            let boundCount = 0;
-            for (const nodeId of nodeIds) {
-                const node = await figma.getNodeByIdAsync(nodeId);
-                if (node && node.type === "TEXT") {
-                    await figma.loadFontAsync(node.fontName);
-                    node.setBoundVariable("characters", variable);
-                    boundCount++;
+        if (msg.type === "unbind-variable") {
+            try {
+                const textNodes = [];
+                for (const node of figma.currentPage.selection) {
+                    await collectTextNodes(node, textNodes);
+                }
+                let unbound = 0;
+                for (const textNode of textNodes) {
+                    const boundId = getTextBoundVariableId(textNode) || getTextBoundVariableIdFromComponentProperty(textNode);
+                    if (boundId === msg.variableId) {
+                        await figma.loadFontAsync(textNode.fontName);
+                        textNode.setBoundVariable("characters", null);
+                        unbound++;
+                    }
+                }
+                if (unbound > 0) {
+                    sendToUI({ type: "status", message: "Unbound variable" });
+                    await scanSelection();
+                }
+                else {
+                    sendToUI({ type: "status", message: "No matching label found in selection", isError: true });
                 }
             }
-            if (boundCount > 0) {
-                const label = boundCount === 1 ? "Linked variable successfully" : `Linked variable to ${boundCount} labels`;
-                sendToUI({ type: "status", message: label });
-                await scanSelection();
+            catch (e) {
+                console.error("Error unbinding variable", e);
+                sendToUI({ type: "status", message: "Failed to unbind: " + e, isError: true });
             }
+            return;
         }
-        catch (e) {
-            console.error("Error binding existing variable", e);
-            sendToUI({ type: "status", message: "Failed to link variable: " + e, isError: true });
-            sendToUI({ type: "create-error" });
-        }
-        return;
-    }
-    if (msg.type === "create-bind-variable") {
-        try {
-            lastCollectionId = msg.collectionId;
-            await figma.clientStorage.setAsync("lastCollectionId", msg.collectionId);
-            const nodeIds = msg.nodeIds && msg.nodeIds.length > 0
-                ? msg.nodeIds
-                : activeUnboundNode ? [activeUnboundNode.id] : [];
-            if (nodeIds.length > 0) {
-                const collection = await figma.variables.getVariableCollectionByIdAsync(msg.collectionId);
-                if (!collection) {
-                    throw new Error("Collection not found");
+        if (msg.type === "bind-existing-variable") {
+            try {
+                let varId = msg.variableId;
+                if (msg.isExternal && msg.key) {
+                    const importedVar = await figma.variables.importVariableByKeyAsync(msg.key);
+                    varId = importedVar.id;
                 }
-                const variable = figma.variables.createVariable(msg.variableName, collection, "STRING");
-                for (const mode of collection.modes) {
-                    const val = msg.modeValues[mode.modeId] || "";
-                    variable.setValueForMode(mode.modeId, val);
-                }
+                const variable = await figma.variables.getVariableByIdAsync(varId);
+                if (!variable)
+                    throw new Error("Variable not found");
+                // Multi-node binding (all selected items unbound)
+                const nodeIds = msg.nodeIds && msg.nodeIds.length > 0
+                    ? msg.nodeIds
+                    : activeUnboundNode ? [activeUnboundNode.id] : [];
                 let boundCount = 0;
                 for (const nodeId of nodeIds) {
                     const node = await figma.getNodeByIdAsync(nodeId);
@@ -497,20 +459,64 @@ figma.ui.onmessage = async (rawMsg) => {
                     }
                 }
                 if (boundCount > 0) {
-                    const label = boundCount === 1 ? "Created & linked variable successfully" : `Created & linked variable to ${boundCount} labels`;
+                    const label = boundCount === 1 ? "Linked variable successfully" : `Linked variable to ${boundCount} labels`;
                     sendToUI({ type: "status", message: label });
+                    await scanSelection();
                 }
-                await scanSelection();
             }
+            catch (e) {
+                console.error("Error binding existing variable", e);
+                sendToUI({ type: "status", message: "Failed to link variable: " + e, isError: true });
+                sendToUI({ type: "create-error" });
+            }
+            return;
         }
-        catch (err) {
-            console.error("Error creating variable", err);
-            let errMsg = String(err);
-            if (errMsg.includes("already exists"))
-                errMsg = "Name already exists";
-            sendToUI({ type: "create-error", message: errMsg });
+        if (msg.type === "create-bind-variable") {
+            try {
+                lastCollectionId = msg.collectionId;
+                await figma.clientStorage.setAsync("lastCollectionId", msg.collectionId);
+                const nodeIds = msg.nodeIds && msg.nodeIds.length > 0
+                    ? msg.nodeIds
+                    : activeUnboundNode ? [activeUnboundNode.id] : [];
+                if (nodeIds.length > 0) {
+                    const collection = await figma.variables.getVariableCollectionByIdAsync(msg.collectionId);
+                    if (!collection) {
+                        throw new Error("Collection not found");
+                    }
+                    const variable = figma.variables.createVariable(msg.variableName, collection, "STRING");
+                    for (const mode of collection.modes) {
+                        const val = msg.modeValues[mode.modeId] || "";
+                        variable.setValueForMode(mode.modeId, val);
+                    }
+                    let boundCount = 0;
+                    for (const nodeId of nodeIds) {
+                        const node = await figma.getNodeByIdAsync(nodeId);
+                        if (node && node.type === "TEXT") {
+                            await figma.loadFontAsync(node.fontName);
+                            node.setBoundVariable("characters", variable);
+                            boundCount++;
+                        }
+                    }
+                    if (boundCount > 0) {
+                        const label = boundCount === 1 ? "Created & linked variable successfully" : `Created & linked variable to ${boundCount} labels`;
+                        sendToUI({ type: "status", message: label });
+                    }
+                    await scanSelection();
+                }
+            }
+            catch (err) {
+                console.error("Error creating variable", err);
+                let errMsg = String(err);
+                if (errMsg.includes("already exists"))
+                    errMsg = "Name already exists";
+                sendToUI({ type: "create-error", message: errMsg });
+            }
+            return;
         }
-        return;
+    }
+    catch (error) {
+        console.error("Unhandled error in message handler for type:", msg.type, error);
+        sendToUI({ type: "status", message: `Error processing ${msg.type}: ${String(error)}`, isError: true });
     }
 };
 // ---------------------------------------------------------------------------
@@ -664,7 +670,31 @@ async function yieldIfNeeded() {
         chunkStartTime = Date.now();
     }
 }
+let currentScanToken = null;
 async function scanSelection() {
+    if (currentScanToken) {
+        currentScanToken.cancelled = true;
+    }
+    const token = { cancelled: false };
+    currentScanToken = token;
+    try {
+        await doScanSelection(token);
+    }
+    catch (error) {
+        if (token.cancelled)
+            return;
+        console.error("Error during scanSelection:", error);
+        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections, bindCollectionFilter: bindCollectionFilterVal });
+    }
+    finally {
+        if (currentScanToken === token) {
+            currentScanToken = null;
+        }
+    }
+}
+async function doScanSelection(token) {
+    if (token.cancelled)
+        throw new Error("cancelled");
     const selection = figma.currentPage.selection;
     const collections = await figma.variables.getLocalVariableCollectionsAsync();
     activeLocalCollections = collections.map(c => ({
@@ -684,9 +714,13 @@ async function scanSelection() {
     }
     sendToUI({ type: "loading-start" });
     await new Promise(resolve => setTimeout(resolve, 30));
+    if (token.cancelled)
+        throw new Error("cancelled");
     const textNodes = [];
     for (const node of selection) {
-        await collectTextNodes(node, textNodes);
+        if (token.cancelled)
+            throw new Error("cancelled");
+        await collectTextNodes(node, textNodes, token);
     }
     if (textNodes.length === 0) {
         activeVariableIds = [];
@@ -696,8 +730,11 @@ async function scanSelection() {
     const variableIds = new Set();
     const allUnboundNodes = [];
     for (let i = 0; i < textNodes.length; i++) {
-        if (i % 20 === 0)
+        if (i % 20 === 0) {
+            if (token.cancelled)
+                throw new Error("cancelled");
             await yieldIfNeeded();
+        }
         const textNode = textNodes[i];
         const boundId = getTextBoundVariableId(textNode) || getTextBoundVariableIdFromComponentProperty(textNode);
         if (boundId) {
@@ -729,7 +766,7 @@ async function scanSelection() {
     activeVariableIds = Array.from(variableIds);
     loadedVariableCount = 0;
     activeAllUnbound = allUnbound;
-    await fetchAndSendNextBatch(true);
+    await fetchAndSendNextBatch(true, token);
 }
 function getStandardLanguageName(name) {
     const n = name.trim().toLowerCase();
@@ -764,7 +801,9 @@ function getStandardLanguageName(name) {
     // Convert something like "Mode 1" to "Mode 1" (keep original case)
     return name.trim();
 }
-async function fetchAndSendNextBatch(isInitial) {
+async function fetchAndSendNextBatch(isInitial, token) {
+    if (token === null || token === void 0 ? void 0 : token.cancelled)
+        throw new Error("cancelled");
     const idsToFetch = activeVariableIds.slice(loadedVariableCount, loadedVariableCount + BATCH_SIZE);
     if (idsToFetch.length === 0) {
         if (isInitial) {
@@ -879,7 +918,9 @@ async function fetchAndSendNextBatch(isInitial) {
 /**
  * Collects TEXT nodes from selected nodes. Uses native findAllWithCriteria for performance.
  */
-async function collectTextNodes(node, acc) {
+async function collectTextNodes(node, acc, token) {
+    if (token === null || token === void 0 ? void 0 : token.cancelled)
+        throw new Error("cancelled");
     if (isNodeIgnored(node))
         return;
     if (node.type === "TEXT") {
@@ -888,9 +929,14 @@ async function collectTextNodes(node, acc) {
     else if ("children" in node) {
         const children = node.children;
         for (let i = 0; i < children.length; i++) {
-            if (i % 20 === 0)
+            if (i % 5 === 0) {
+                if (token === null || token === void 0 ? void 0 : token.cancelled)
+                    throw new Error("cancelled");
                 await yieldIfNeeded();
-            await collectTextNodes(children[i], acc);
+            }
+            if (token === null || token === void 0 ? void 0 : token.cancelled)
+                throw new Error("cancelled");
+            await collectTextNodes(children[i], acc, token);
         }
     }
 }
