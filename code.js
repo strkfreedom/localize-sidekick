@@ -209,7 +209,7 @@ figma.ui.onmessage = async (rawMsg) => {
                 // Detach selected text nodes bound to this variable
                 const selectedTextNodes = [];
                 for (const node of figma.currentPage.selection) {
-                    collectTextNodes(node, selectedTextNodes);
+                    await collectTextNodes(node, selectedTextNodes);
                 }
                 for (const textNode of selectedTextNodes) {
                     if (getTextBoundVariableId(textNode) === msg.variableId) {
@@ -222,12 +222,12 @@ figma.ui.onmessage = async (rawMsg) => {
                 await scanSelection();
             }
             else {
-                sendToUI({ type: "status", message: "Variable not found" });
+                sendToUI({ type: "status", message: "Variable not found", isError: true });
             }
         }
         catch (err) {
             console.error("Error deleting variable", msg.variableId, err);
-            sendToUI({ type: "status", message: "Failed to delete variable: " + err });
+            sendToUI({ type: "status", message: "Failed to delete variable: " + err, isError: true });
         }
         return;
     }
@@ -244,8 +244,10 @@ figma.ui.onmessage = async (rawMsg) => {
     }
     if (msg.type === "search-link-variables") {
         const query = (msg.query || "").toLowerCase();
+        const nodeText = (msg.nodeText || "").toLowerCase().trim();
         const collectionId = msg.collectionId || "all";
         let results = [];
+        const searchModes = new Set();
         // 1. Search local variables
         if (collectionId !== "external") {
             const localVars = await figma.variables.getLocalVariablesAsync("STRING");
@@ -258,6 +260,7 @@ figma.ui.onmessage = async (rawMsg) => {
                     const col = await getCachedCollection(v.variableCollectionId);
                     let val = "";
                     if (col && col.modes.length > 0) {
+                        col.modes.forEach(m => searchModes.add(getStandardLanguageName(m.name)));
                         let targetModeId = col.modes[0].modeId;
                         if (msg.previewModeName) {
                             const foundMode = col.modes.find(m => getStandardLanguageName(m.name) === msg.previewModeName);
@@ -268,13 +271,30 @@ figma.ui.onmessage = async (rawMsg) => {
                         if (typeof modeVal === "string")
                             val = modeVal;
                     }
-                    if (v.name.toLowerCase().includes(query) || val.toLowerCase().includes(query)) {
+                    let anyModeMatches = false;
+                    let matchScore = 2;
+                    for (const modeId in v.valuesByMode) {
+                        const mVal = v.valuesByMode[modeId];
+                        if (typeof mVal === "string") {
+                            const ml = mVal.toLowerCase();
+                            if (ml.includes(query))
+                                anyModeMatches = true;
+                            if (nodeText) {
+                                if (ml === nodeText)
+                                    matchScore = 0;
+                                else if (ml.includes(nodeText) && matchScore > 1)
+                                    matchScore = 1;
+                            }
+                        }
+                    }
+                    if (v.name.toLowerCase().includes(query) || anyModeMatches) {
                         results.push({
                             id: v.id,
                             name: v.name,
                             collectionName: `Local / ${col ? col.name : "Unknown"}`,
                             value: val,
-                            isExternal: false
+                            isExternal: false,
+                            matchScore
                         });
                     }
                 }
@@ -309,6 +329,7 @@ figma.ui.onmessage = async (rawMsg) => {
                         const col = await figma.variables.getVariableCollectionByIdAsync(importedVar.variableCollectionId);
                         let val = "";
                         if (col && col.modes.length > 0) {
+                            col.modes.forEach(m => searchModes.add(getStandardLanguageName(m.name)));
                             let targetModeId = col.modes[0].modeId;
                             if (msg.previewModeName) {
                                 const foundMode = col.modes.find(m => getStandardLanguageName(m.name) === msg.previewModeName);
@@ -319,8 +340,24 @@ figma.ui.onmessage = async (rawMsg) => {
                             if (typeof modeVal === "string")
                                 val = modeVal;
                         }
+                        let anyModeMatches = false;
+                        let matchScore = 2;
+                        for (const modeId in importedVar.valuesByMode) {
+                            const mVal = importedVar.valuesByMode[modeId];
+                            if (typeof mVal === "string") {
+                                const ml = mVal.toLowerCase();
+                                if (ml.includes(query))
+                                    anyModeMatches = true;
+                                if (nodeText) {
+                                    if (ml === nodeText)
+                                        matchScore = 0;
+                                    else if (ml.includes(nodeText) && matchScore > 1)
+                                        matchScore = 1;
+                                }
+                            }
+                        }
                         // Post-import filter: must match query by name OR value
-                        if (query && !extVar.name.toLowerCase().includes(query) && !val.toLowerCase().includes(query)) {
+                        if (query && !extVar.name.toLowerCase().includes(query) && !anyModeMatches) {
                             continue;
                         }
                         results.push({
@@ -329,7 +366,8 @@ figma.ui.onmessage = async (rawMsg) => {
                             collectionName: extVar.collectionName,
                             value: val,
                             isExternal: true,
-                            key: extVar.key
+                            key: extVar.key,
+                            matchScore
                         });
                     }
                     catch (e) {
@@ -339,16 +377,14 @@ figma.ui.onmessage = async (rawMsg) => {
             } // close !skipExternal
         }
         // Sort: if nodeText provided, exact value match first, partial match next, then alphabetical
-        const nodeText = (msg.nodeText || "").toLowerCase().trim();
         if (nodeText && results.length > 0) {
-            const hasAnyMatch = results.some(r => r.value.toLowerCase().includes(nodeText));
+            const hasAnyMatch = results.some(r => r.matchScore !== undefined && r.matchScore < 2);
             if (hasAnyMatch) {
                 // Sort: exact match → partial match → rest (alphabetical within each group)
                 results.sort((a, b) => {
-                    const aVal = a.value.toLowerCase();
-                    const bVal = b.value.toLowerCase();
-                    const aScore = aVal === nodeText ? 0 : (aVal.includes(nodeText) ? 1 : 2);
-                    const bScore = bVal === nodeText ? 0 : (bVal.includes(nodeText) ? 1 : 2);
+                    var _a, _b;
+                    const aScore = (_a = a.matchScore) !== null && _a !== void 0 ? _a : 2;
+                    const bScore = (_b = b.matchScore) !== null && _b !== void 0 ? _b : 2;
                     if (aScore !== bScore)
                         return aScore - bScore;
                     return a.name.localeCompare(b.name);
@@ -366,7 +402,7 @@ figma.ui.onmessage = async (rawMsg) => {
                 results = results.slice(0, 10);
             }
         }
-        sendToUI({ type: "search-link-variables-result", results });
+        sendToUI({ type: "search-link-variables-result", results, searchModes: Array.from(searchModes) });
         return;
     }
     if (msg.type === "unbind-variable") {
@@ -389,12 +425,12 @@ figma.ui.onmessage = async (rawMsg) => {
                 await scanSelection();
             }
             else {
-                sendToUI({ type: "status", message: "No matching label found in selection" });
+                sendToUI({ type: "status", message: "No matching label found in selection", isError: true });
             }
         }
         catch (e) {
             console.error("Error unbinding variable", e);
-            sendToUI({ type: "status", message: "Failed to unbind: " + e });
+            sendToUI({ type: "status", message: "Failed to unbind: " + e, isError: true });
         }
         return;
     }
@@ -429,7 +465,7 @@ figma.ui.onmessage = async (rawMsg) => {
         }
         catch (e) {
             console.error("Error binding existing variable", e);
-            sendToUI({ type: "status", message: "Failed to link variable: " + e });
+            sendToUI({ type: "status", message: "Failed to link variable: " + e, isError: true });
             sendToUI({ type: "create-error" });
         }
         return;
@@ -438,9 +474,10 @@ figma.ui.onmessage = async (rawMsg) => {
         try {
             lastCollectionId = msg.collectionId;
             await figma.clientStorage.setAsync("lastCollectionId", msg.collectionId);
-            const node = await figma.getNodeByIdAsync(msg.nodeId);
-            if (node && node.type === "TEXT") {
-                await figma.loadFontAsync(node.fontName);
+            const nodeIds = msg.nodeIds && msg.nodeIds.length > 0
+                ? msg.nodeIds
+                : activeUnboundNode ? [activeUnboundNode.id] : [];
+            if (nodeIds.length > 0) {
                 const collection = await figma.variables.getVariableCollectionByIdAsync(msg.collectionId);
                 if (!collection) {
                     throw new Error("Collection not found");
@@ -450,7 +487,19 @@ figma.ui.onmessage = async (rawMsg) => {
                     const val = msg.modeValues[mode.modeId] || "";
                     variable.setValueForMode(mode.modeId, val);
                 }
-                node.setBoundVariable("characters", variable);
+                let boundCount = 0;
+                for (const nodeId of nodeIds) {
+                    const node = await figma.getNodeByIdAsync(nodeId);
+                    if (node && node.type === "TEXT") {
+                        await figma.loadFontAsync(node.fontName);
+                        node.setBoundVariable("characters", variable);
+                        boundCount++;
+                    }
+                }
+                if (boundCount > 0) {
+                    const label = boundCount === 1 ? "Created & linked variable successfully" : `Created & linked variable to ${boundCount} labels`;
+                    sendToUI({ type: "status", message: label });
+                }
                 await scanSelection();
             }
         }
@@ -515,6 +564,7 @@ async function ensureLibraryMaps() {
                     seenCollectionsChanged = true;
                 }
                 let hasStringVariables = false;
+                let importedModesForCollection = false;
                 try {
                     const vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(libCol.key);
                     for (const v of vars) {
@@ -524,6 +574,21 @@ async function ensureLibraryMaps() {
                         if (v.resolvedType === "STRING") {
                             hasStringVariables = true;
                             availableExternalVariables.push(Object.assign(Object.assign({}, v), { collectionName: `${libCol.libraryName} / ${libCol.name}`, libraryName: libCol.libraryName, collectionId: libCol.key }));
+                            if (!importedModesForCollection && !disabledCollections.includes(libCol.key)) {
+                                try {
+                                    const importedVar = await figma.variables.importVariableByKeyAsync(v.key);
+                                    const importedCol = await figma.variables.getVariableCollectionByIdAsync(importedVar.variableCollectionId);
+                                    if (importedCol && importedCol.modes.length > 0) {
+                                        const foundModes = new Set();
+                                        importedCol.modes.forEach(m => foundModes.add(getStandardLanguageName(m.name)));
+                                        sendToUI({ type: "available-modes-updated", modes: Array.from(foundModes) });
+                                    }
+                                    importedModesForCollection = true;
+                                }
+                                catch (e) {
+                                    // Ignore import failure, might retry on next string variable
+                                }
+                            }
                         }
                     }
                 }

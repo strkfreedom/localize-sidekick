@@ -1,878 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Locale Editor</title>
-  <style>
-    /* -----------------------------------------------------------------------
-       Design tokens – Figma CSS vars with dark fallbacks
-    ----------------------------------------------------------------------- */
-    :root {
-      --bg-page:        var(--figma-color-bg, #222222);
-      --bg-card:        var(--figma-color-bg-secondary, #2c2c2c);
-      --bg-input:       var(--figma-color-bg-tertiary, #383838);
-      --bg-hover:       var(--figma-color-bg-hover, #333333);
-      --text-primary:   var(--figma-color-text, #FFFFFF);
-      --text-secondary: var(--figma-color-text-secondary, #b3b3b3);
-      --text-muted:     var(--figma-color-text-tertiary, #808080);
-      --accent:         var(--figma-color-bg-brand, #0d99ff);
-      --accent-hover:   var(--figma-color-bg-brand-hover, #007be5);
-      --accent-disabled: var(--figma-color-bg-brand-disabled, #333333);
-      --text-disabled:  var(--figma-color-text-disabled, #757575);
-      --border:         var(--figma-color-border, #444444);
-      --border-focus:   var(--figma-color-border-brand-strong, #0d99ff);
-      --danger:         var(--figma-color-icon-danger, #f24822);
-      --success:        var(--figma-color-icon-success, #14a83b);
-      --radius:         6px;
-      --radius-sm:      4px;
-      --font:           "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont,
-                        "Segoe UI", sans-serif;
-      --transition:     150ms ease;
-    }
 
-    /* -----------------------------------------------------------------------
-       Reset & base
-    ----------------------------------------------------------------------- */
-    *, *::before, *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-    }
-
-    body {
-      background: var(--bg-page);
-      color: var(--text-primary);
-      font-family: var(--font);
-      font-size: 12px;
-      line-height: 1.5;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* -----------------------------------------------------------------------
-       Main layout
-    ----------------------------------------------------------------------- */
-    #mainContent {
-      flex: 1;
-      overflow-y: auto;
-      padding-bottom: 24px;
-    }
-
-    #mainContent::-webkit-scrollbar {
-      width: 4px;
-    }
-    #mainContent::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    #mainContent::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.1);
-      border-radius: 2px;
-    }
-
-    /* -----------------------------------------------------------------------
-       Empty state
-    ----------------------------------------------------------------------- */
-    .empty-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 60px 24px;
-      gap: 12px;
-      text-align: center;
-    }
-
-    .empty-icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 14px;
-      background: var(--bg-card);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--text-muted);
-    }
-
-    .empty-icon svg {
-      width: 22px;
-      height: 22px;
-    }
-
-    .empty-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-secondary);
-    }
-
-    /* -----------------------------------------------------------------------
-       Collection Section
-    ----------------------------------------------------------------------- */
-    .collection-header {
-      padding: 16px 16px 12px;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .collection-header-icon {
-      color: var(--text-muted);
-    }
-    .variable-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 0 12px;
-    }
-
-    /* -----------------------------------------------------------------------
-       Variable card
-    ----------------------------------------------------------------------- */
-    .var-card {
-      background: var(--bg-card);
-      border-radius: var(--radius);
-      border: 1px solid transparent;
-      overflow: hidden;
-      min-width: 0;
-      width: 100%;
-      transition: border-color var(--transition);
-    }
-
-    /* Card header */
-    .var-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 12px;
-      cursor: pointer;
-      user-select: none;
-      transition: background var(--transition);
-    }
-
-    .var-header:hover {
-      background: var(--bg-hover);
-    }
-
-    .var-icon {
-      width: 20px;
-      height: 20px;
-      border-radius: 4px;
-      background: rgba(255, 255, 255, 0.08);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 10px;
-      font-weight: 700;
-      color: var(--text-secondary);
-      flex-shrink: 0;
-      border: 1px solid var(--border);
-    }
-
-    .var-name-wrap {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .var-name {
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      min-width: 0;
-    }
-
-    .dirty-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--danger);
-      flex-shrink: 0;
-      opacity: 0;
-      transition: opacity var(--transition);
-    }
-
-    .var-header-right {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      flex-shrink: 0;
-    }
-
-    .edit-var-btn, .copy-var-btn, .unbind-var-btn {
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity var(--transition), color var(--transition);
-      color: var(--text-secondary);
-      width: 20px;
-      height: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .var-card:hover .edit-var-btn, .var-card:hover .copy-var-btn, .var-card:hover .unbind-var-btn {
-      opacity: 1;
-      pointer-events: auto;
-    }
-    .edit-var-btn:hover, .copy-var-btn:hover {
-      color: var(--text-primary);
-    }
-    .unbind-var-btn:hover {
-      color: var(--danger);
-    }
-
-    .rename-input {
-      background: var(--bg-input);
-      color: var(--text-primary);
-      border: 1px solid var(--border-focus);
-      border-radius: 4px;
-      padding: 2px 4px;
-      font-size: 11px;
-      font-family: var(--font);
-      font-weight: 600;
-      outline: none;
-      width: 100%;
-      margin-right: 8px;
-    }
-
-    .chevron {
-      color: var(--text-muted);
-      transition: transform 200ms ease;
-      display: flex;
-      align-items: center;
-      cursor: pointer;
-      padding: 4px;
-      margin-right: -4px;
-      transform: rotate(180deg);
-    }
-    .chevron:hover {
-      color: var(--text-primary);
-    }
-
-    .chevron svg {
-      width: 14px;
-      height: 14px;
-    }
-
-    .var-card.collapsed .chevron {
-      transform: rotate(0);
-    }
-
-    /* Card body */
-    .var-body-wrapper {
-      display: grid;
-      grid-template-rows: 1fr;
-      transition: grid-template-rows 200ms cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .var-card.collapsed .var-body-wrapper {
-      grid-template-rows: 0fr;
-    }
-
-    .var-body {
-      min-height: 0;
-      overflow: hidden;
-    }
-
-    .var-body-inner {
-      padding: 0 12px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    /* Mode row */
-    .mode-row {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .mode-label {
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      padding-left: 2px;
-    }
-
-    /* Textarea */
-    .mode-textarea {
-      width: 100%;
-      background: var(--bg-input);
-      border: 1px solid transparent;
-      border-radius: var(--radius-sm);
-      color: var(--text-primary);
-      font-family: var(--font);
-      font-size: 12px;
-      line-height: 1.5;
-      padding: 8px 10px;
-      resize: none;
-      outline: none;
-      transition: border-color var(--transition), background var(--transition);
-      overflow: hidden; /* JS manages height */
-    }
-
-    .mode-textarea:focus {
-      border-color: var(--border-focus);
-      background: var(--bg-card);
-    }
-
-    .mode-textarea.changed {
-      border-color: var(--border-focus);
-    }
-
-    .mode-textarea.empty {
-      background: rgba(255, 194, 71, 0.08);
-      border: 1px dashed rgba(255, 194, 71, 0.4);
-    }
-    .mode-textarea.empty:focus {
-      background: var(--bg-card);
-      border-style: solid;
-      border-color: var(--border-focus);
-    }
-
-    .mode-textarea[readonly] {
-      opacity: 0.5;
-      cursor: not-allowed;
-      background: rgba(255, 255, 255, 0.02);
-    }
-    .mode-textarea[readonly]:focus {
-      border-color: transparent;
-      background: rgba(255, 255, 255, 0.02);
-    }
-
-    /* -----------------------------------------------------------------------
-       Top Header
-    ----------------------------------------------------------------------- */
-    .top-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border);
-      background: var(--bg-page);
-      flex-shrink: 0;
-    }
-    .top-header-left {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .top-header-right {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .icon-btn {
-      width: 26px;
-      height: 26px;
-      border-radius: var(--radius-sm);
-      background: transparent;
-      color: var(--text-secondary);
-      border: 1px solid transparent;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all var(--transition);
-    }
-    .icon-btn:hover {
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text-primary);
-    }
-    .select-dropdown {
-      background: var(--bg-input);
-      color: var(--text-primary);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 4px 8px;
-      font-size: 11px;
-      font-family: var(--font);
-      outline: none;
-      cursor: pointer;
-      min-width: 140px;
-    }
-    .select-dropdown:hover {
-      background: var(--bg-hover);
-    }
-
-    /* Search Box */
-    .search-wrap {
-      position: relative;
-      display: flex;
-      align-items: center;
-    }
-    .search-icon {
-      position: absolute;
-      left: 6px;
-      width: 14px;
-      height: 14px;
-      color: var(--text-secondary);
-      pointer-events: none;
-    }
-    .search-input {
-      background: var(--bg-input);
-      color: var(--text-primary);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 4px 8px 4px 24px;
-      font-size: 11px;
-      font-family: var(--font);
-      outline: none;
-      width: 130px;
-      transition: all var(--transition);
-    }
-    .search-input:focus {
-      border-color: var(--border-focus);
-      width: 170px;
-    }
-    .search-input::placeholder {
-      color: var(--text-secondary);
-      opacity: 0.6;
-    }
-
-    /* Load More Button */
-    .load-more-btn {
-      width: 100%;
-      margin-top: 16px;
-      padding: 8px 12px;
-      background: var(--bg-card);
-      color: var(--text-primary);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      font-size: 11px;
-      font-family: var(--font);
-      font-weight: 500;
-      transition: background var(--transition);
-    }
-    .load-more-btn:hover {
-      background: var(--bg-hover);
-    }
-
-    /* -----------------------------------------------------------------------
-       Footer / bottom bar
-    ----------------------------------------------------------------------- */
-    .footer {
-      padding: 12px 16px;
-      border-top: 1px solid var(--border);
-      background: var(--bg-page);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-shrink: 0;
-    }
-
-    .footer-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .footer.auto-apply-on .footer-right {
-      display: none;
-    }
-
-    /* Auto-apply toggle */
-    .auto-apply-toggle {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-      padding-left: 12px;
-      border-left: 1px solid var(--border);
-    }
-    .auto-apply-toggle input {
-      display: none;
-    }
-    .toggle-slider {
-      width: 26px;
-      height: 14px;
-      background: var(--bg-input);
-      border-radius: 7px;
-      position: relative;
-      transition: background 150ms;
-      border: 1px solid var(--border);
-    }
-    .toggle-slider::after {
-      content: "";
-      position: absolute;
-      top: 1px;
-      left: 1px;
-      width: 10px;
-      height: 10px;
-      background: var(--text-muted);
-      border-radius: 50%;
-      transition: transform 150ms, background 150ms;
-    }
-    .auto-apply-toggle input:checked + .toggle-slider {
-      background: var(--accent);
-      border-color: var(--accent);
-    }
-    .auto-apply-toggle input:checked + .toggle-slider::after {
-      transform: translateX(12px);
-      background: #fff;
-    }
-    .toggle-label {
-      font-size: 11px;
-      color: var(--text-secondary);
-      user-select: none;
-    }
-
-    .footer-right {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    /* Generic buttons */
-    button {
-      font-family: var(--font);
-      font-size: 11px;
-      border: none;
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      transition: background var(--transition), color var(--transition), opacity var(--transition);
-    }
-
-    button:disabled {
-      cursor: not-allowed;
-      opacity: 0.5;
-    }
-
-    /* Ghost button (Undo / Refresh) */
-    .btn-ghost {
-      background: transparent;
-      color: var(--text-secondary);
-      padding: 6px 10px;
-    }
-
-    .btn-ghost:not(:disabled):hover {
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text-primary);
-    }
-
-    /* Primary button (Apply) */
-    .btn-primary {
-      background: var(--accent);
-      color: #fff;
-      font-weight: 500;
-      padding: 6px 14px;
-    }
-
-    .btn-primary:not(:disabled):hover {
-      background: var(--accent-hover);
-    }
-
-    .btn-primary:disabled {
-      background: var(--accent-disabled);
-      color: var(--text-disabled);
-    }
-
-    .refresh-icon.spinning {
-      animation: spin 0.6s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    /* Resize Handle */
-    #resizeHandle {
-      position: absolute;
-      bottom: 0;
-      right: 0;
-      width: 14px;
-      height: 14px;
-      padding: 4px;
-      box-sizing: content-box;
-      cursor: nwse-resize;
-      color: var(--text-muted);
-      opacity: 0.5;
-      transition: opacity var(--transition);
-      z-index: 50;
-    }
-    #resizeHandle:hover {
-      opacity: 1;
-    }
-
-    /* -----------------------------------------------------------------------
-       Loading State
-    ----------------------------------------------------------------------- */
-    .loading-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 60px 20px;
-      color: var(--text-secondary);
-      font-size: 13px;
-      text-align: center;
-    }
-    .spinner {
-      width: 24px;
-      height: 24px;
-      border: 3px solid rgba(0, 0, 0, 0.1);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 12px;
-    }
-    .dark-mode .spinner {
-      border: 3px solid rgba(255, 255, 255, 0.1);
-      border-top-color: var(--accent);
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    @keyframes fadeIn {
-      to { opacity: 1; }
-    }
-
-    /* -----------------------------------------------------------------------
-       Toast
-    ----------------------------------------------------------------------- */
-    .toast {
-      position: fixed;
-      bottom: 60px;
-      left: 50%;
-      transform: translateX(-50%) translateY(6px);
-      background: #1E1E1E;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 8px 16px;
-      font-size: 11px;
-      color: var(--text-primary);
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 250ms ease, transform 250ms ease;
-      z-index: 100;
-    }
-    .toast.visible {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-    .toast-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--success);
-      flex-shrink: 0;
-    }
-    .toast.error .toast-dot {
-      background: var(--danger);
-    }
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      background: var(--bg-hover);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 3px 6px;
-      font-size: 11px;
-      color: var(--text-primary);
-    }
-    .pill .remove-btn {
-      cursor: pointer;
-      color: var(--text-secondary);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: color var(--transition);
-    }
-    .pill .remove-btn:hover {
-      color: var(--danger);
-    }
-  </style>
-</head>
-<body>
-
-  <!-- =====================================================================
-       TABS HEADER
-  ====================================================================== -->
-  <div class="tabs-container" id="tabsContainer" style="display: flex; background: var(--bg-page); border-bottom: 1px solid var(--border); padding: 0 12px; flex-shrink: 0;">
-    <button class="tab-btn active" data-tab="bound" style="background: transparent; border: none; color: var(--text-primary); padding: 10px 12px; font-size: 11px; font-weight: 500; cursor: pointer; border-bottom: 2px solid var(--accent); transition: color var(--transition), border-color var(--transition);">Variables</button>
-    <button class="tab-btn" data-tab="unbound" style="background: transparent; border: none; color: var(--text-secondary); padding: 10px 12px; font-size: 11px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; transition: color var(--transition), border-color var(--transition);">Unbound Labels</button>
-    <button class="tab-btn" data-tab="settings" style="background: transparent; border: none; color: var(--text-secondary); padding: 10px 12px; font-size: 11px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; transition: color var(--transition), border-color var(--transition);">Settings</button>
-  </div>
-
-  <!-- =====================================================================
-       TAB: BOUND VARIABLES
-  ====================================================================== -->
-  <div class="tab-content active" id="tabBound" style="display: flex; flex: 1; flex-direction: column; overflow: hidden;">
-
-  <!-- =====================================================================
-       TOP HEADER (Filters and Toggles)
-  ====================================================================== -->
-  <div class="top-header">
-    <div class="top-header-left">
-      <select id="collectionFilter" class="select-dropdown">
-        <option value="all">All collections</option>
-        <option value="local">Local collections only</option>
-        <option value="external">Libraries only</option>
-      </select>
-      <div class="search-wrap">
-        <svg class="search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="7" cy="7" r="4.5" />
-          <line x1="10.5" y1="10.5" x2="14" y2="14" />
-        </svg>
-        <input type="text" id="searchInput" class="search-input" placeholder="Search variables & values" spellcheck="false" />
-      </div>
-    </div>
-    <div class="top-header-right">
-      <button class="icon-btn" id="toggleExpandBtn" title="Collapse all" data-state="expanded">
-        <svg id="icon-collapse" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16">
-          <polyline points="3 10 8 5 13 10" />
-        </svg>
-        <svg id="icon-expand" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16" style="display: none;">
-          <polyline points="3 6 8 11 13 6" />
-        </svg>
-      </button>
-    </div>
-  </div>
-
-  <!-- =====================================================================
-       MAIN CONTENT (Variables by Collection)
-  ====================================================================== -->
-  <div id="mainContent"></div>
-
-  <!-- =====================================================================
-       FOOTER (Global Apply / Undo)
-  ====================================================================== -->
-  <div class="footer auto-apply-on" id="globalFooter">
-    <div class="footer-left">
-      <button class="btn-ghost" id="refreshBtn" title="Re-scan selection">
-        <svg class="refresh-icon" id="refreshIcon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="12" height="12">
-          <path d="M13.5 8A5.5 5.5 0 1 1 10 3.1"/>
-          <polyline points="10 1 10 3.5 12.5 3.5"/>
-        </svg>
-        Refresh
-      </button>
-      <label class="auto-apply-toggle" title="Save changes automatically as you type">
-        <input type="checkbox" id="autoApplyToggle" checked />
-        <span class="toggle-slider"></span>
-        <span class="toggle-label">Auto-apply</span>
-      </label>
-    </div>
-    <div class="footer-right">
-      <button class="btn-ghost" id="undoBtn" disabled>Undo</button>
-      <button class="btn-primary" id="applyBtn" disabled>Apply</button>
-    </div>
-  </div>
-
-  </div> <!-- End Tab Bound -->
-
-  <!-- =====================================================================
-       TAB: UNBOUND LABELS
-  ====================================================================== -->
-  <div class="tab-content" id="tabUnbound" style="display: none; flex: 1; flex-direction: column; overflow: hidden; background: var(--bg-page); min-width: 0; width: 100%;">
-    <div class="top-header" style="padding: 10px 16px; border-bottom: 1px solid var(--border); flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; width: 100%;">
-      <div style="display: flex; gap: 8px; align-items: stretch; min-width: 0; width: 100%;">
-        <div class="search-wrap" style="flex: 1; min-width: 0;">
-          <input type="text" id="negativeListInput" class="search-input" style="padding-left: 8px; width: 100%; min-width: 0;" placeholder="Add layer name to ignore... (press Enter)" spellcheck="false" title="Type a layer name and press Enter" />
-        </div>
-        <button class="btn-ghost" id="clearNegativeListBtn" style="padding: 4px 12px; font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); flex-shrink: 0;" title="Clear all ignored layer names">Clear all</button>
-      </div>
-      <div id="negativeListPills" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
-    </div>
-    <div id="unboundListActions" style="display: flex; justify-content: flex-end; padding: 12px 16px 8px; gap: 8px; flex-shrink: 0;">
-      <button class="btn-ghost" id="selectAllUnboundBtn" style="padding: 4px 12px; font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius-sm);" title="Highlight all unbound nodes below on canvas">Highlight all</button>
-      <button class="btn-ghost" id="ignoreAllUnboundBtn" style="padding: 4px 12px; font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius-sm);" title="Add all below layer names to the ignore list">Ignore all</button>
-    </div>
-    <div id="unboundContent" style="flex: 1; overflow-y: auto; overflow-x: hidden; padding: 12px 16px 16px; min-width: 0; width: 100%;">
-      <div class="empty-state" id="unboundEmptyState">
-        <div class="empty-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="3"/>
-            <path d="M9 12h6M9 8h6M9 16h3"/>
-          </svg>
-        </div>
-        <div class="empty-title">No unbound text labels in selection</div>
-      </div>
-      <div id="unboundList" style="display: flex; flex-direction: column; gap: 8px; min-width: 0; width: 100%;"></div>
-    </div>
-    <div id="unboundBindContainer" style="display: none; flex: 1; flex-direction: column; overflow: hidden; background: var(--bg-page);"></div>
-    <div class="footer" id="unboundFooter" style="justify-content: center; background: var(--bg-card); flex-shrink: 0; padding: 12px 16px; border-top: 1px solid var(--border);">
-      <button class="btn-ghost" id="scanAllUnboundBtn" style="width: 100%; border: 1px dashed var(--border); padding: 8px; font-weight: 500; display: none;">Scan all labels (the rest)</button>
-    </div>
-  </div>
-
-  <!-- =====================================================================
-       TAB: SETTINGS
-  ====================================================================== -->
-  <div class="tab-content" id="tabSettings" style="display: none; flex: 1; flex-direction: column; overflow: hidden; background: var(--bg-page);">
-    <div style="padding: 20px 16px; display: flex; flex-direction: column; gap: 24px; overflow-y: auto;">
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <label style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Default Collection for New Variables</label>
-        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; line-height: 1.4;">Select the default local collection to use when creating new variables.</div>
-        <select id="defaultCreateCollectionSelect" class="select-dropdown" style="width: 100%;">
-          <option value="">No default collection</option>
-        </select>
-      </div>
-      
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <label style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Active Collections</label>
-        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; line-height: 1.4;">Uncheck collections to hide them from all filters and searches.</div>
-        <div style="font-size: 11px; margin-top: 4px;">
-          <a href="#" id="checkAllColsBtn" style="color: #18A0FB; text-decoration: none; margin-right: 8px;">Check all</a>
-          <a href="#" id="uncheckAllColsBtn" style="color: #18A0FB; text-decoration: none;">Uncheck all</a>
-        </div>
-        <div id="activeCollectionsList" style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
-          <!-- Populated dynamically -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Resize Handle -->
-  <svg id="resizeHandle" viewBox="0 0 16 16" fill="none">
-    <path d="M14 8L8 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-    <path d="M14 11.5L11.5 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-  </svg>
-
-  <!-- =====================================================================
-       TOAST
-  ====================================================================== -->
-  <div class="toast" id="toast">
-    <div class="toast-dot"></div>
-    <span id="toastMsg">Changes applied.</span>
-  </div>
-
-  <!-- =====================================================================
-       JAVASCRIPT
-  ====================================================================== -->
-  <!-- GLOBAL BIND VARIABLE FOOTER -->
-  <div class="footer" id="bindVariableGlobalFooter" style="display: none; align-items: center; justify-content: space-between; background: var(--bg-card); flex-shrink: 0; padding: 12px 16px; border-top: 1px solid var(--border);">
-    <span style="font-size: 11px; font-weight: 500; color: var(--text-secondary);">Preview Mode</span>
-    <select id="previewModeSelect" class="select-dropdown" style="width: 140px; margin: 0; padding: 4px 8px; font-size: 11px;"></select>
-  </div>
-  
-  <script>
     /**
      * @typedef {{ modeId: string, modeName: string, value: string }} ModeValue
      * @typedef {{ variableId: string, variableName: string, collectionName: string, modes: ModeValue[] }} BoundVariable
@@ -968,26 +94,9 @@
           if (unboundList) unboundList.innerHTML = loaderHTML;
         }
         return;
-      } else if (msg.type === "available-modes-updated") {
-        if (msg.modes && msg.modes.length > 0) {
-          let updated = false;
-          msg.modes.forEach(m => {
-            if (!availableModes.includes(m)) {
-              availableModes.push(m);
-              updated = true;
-            }
-          });
-          if (updated) {
-            const activeTab = document.querySelector(".tab-content[style*='display: flex']") || document;
-            const previewModeSelect = activeTab.querySelector("#previewModeSelect") || document.getElementById("bindVariableGlobalFooter")?.querySelector("#previewModeSelect");
-            if (previewModeSelect) {
-              const currentVal = previewModeSelect.value;
-              previewModeSelect.innerHTML = `<option value="">Default (First Mode)</option>` + availableModes.map(m => `<option value="${escHtml(m)}" ${m === selectedPreviewMode ? "selected" : ""}>${escHtml(m)}</option>`).join("");
-              previewModeSelect.value = currentVal;
-            }
-          }
-        }
-      } else if (msg.type === "external-collections-loaded") {
+      }
+
+      if (msg.type === "external-collections-loaded") {
         if (msg.externalCollections) {
           externalCollections = msg.externalCollections;
           if (msg.disabledCollections) disabledCollections = msg.disabledCollections;
@@ -1045,7 +154,6 @@
         }
 
         if (msg.type === "scan-result") {
-          activeUnboundBindNodes = null;
           currentVariables = msg.variables;
           unboundNode = msg.unboundNode || null;
           if (msg.localCollections) {
@@ -1148,33 +256,13 @@
           }
         }
       } else if (msg.type === "search-link-variables-result") {
-        const activeTab = document.querySelector(".tab-content[style*='display: flex']") || document;
-        
-        if (msg.searchModes && msg.searchModes.length > 0) {
-          let updated = false;
-          msg.searchModes.forEach(m => {
-            if (!availableModes.includes(m)) {
-              availableModes.push(m);
-              updated = true;
-            }
-          });
-          if (updated) {
-            const previewModeSelect = activeTab.querySelector("#previewModeSelect") || document.getElementById("bindVariableGlobalFooter")?.querySelector("#previewModeSelect");
-            if (previewModeSelect) {
-              const currentVal = previewModeSelect.value;
-              previewModeSelect.innerHTML = `<option value="">Default (First Mode)</option>` + availableModes.map(m => `<option value="${escHtml(m)}" ${m === selectedPreviewMode ? "selected" : ""}>${escHtml(m)}</option>`).join("");
-              previewModeSelect.value = currentVal;
-            }
-          }
-        }
-
-        const linkVarResults = activeTab.querySelector("#linkVarResults");
+        const linkVarResults = document.getElementById("linkVarResults");
         if (linkVarResults) {
           linkVarResults.innerHTML = "";
           if (msg.results.length === 0) {
             linkVarResults.innerHTML = `<div style="padding: 12px; text-align: center; color: var(--text-muted); font-size: 11px;">No variables found</div>`;
           } else {
-            const currentSearchInput = activeTab.querySelector("#linkVarSearch");
+            const currentSearchInput = document.getElementById("linkVarSearch");
             const currentQuery = currentSearchInput ? currentSearchInput.value.trim() : "";
             
             const highlightMatch = (text, q) => {
@@ -1206,15 +294,10 @@
               `;
               
               item.onclick = () => {
-                const activeTab = document.querySelector(".tab-content[style*='display: flex']") || document;
-                const btn = activeTab.querySelector("#createBindBtn");
+                const btn = document.getElementById("createBindBtn");
                 if (btn) btn.disabled = true;
                 const msg = { type: "bind-existing-variable", variableId: res.id, isExternal: res.isExternal, key: res.key };
-                if (activeUnboundBindNodes && activeUnboundBindNodes.length > 0) {
-                  msg.nodeIds = activeUnboundBindNodes.map(n => n.id);
-                } else if (allUnbound && allUnboundNodeIds.length > 0) {
-                  msg.nodeIds = allUnboundNodeIds;
-                }
+                if (allUnbound && allUnboundNodeIds.length > 0) msg.nodeIds = allUnboundNodeIds;
                 parent.postMessage({ pluginMessage: msg }, "*");
               };
               
@@ -1223,8 +306,7 @@
           }
         }
       } else if (msg.type === "create-error") {
-        const activeTab = document.querySelector(".tab-content[style*='display: flex']") || document;
-        const createBindBtn = activeTab.querySelector("#createBindBtn");
+        const createBindBtn = document.getElementById("createBindBtn");
         if (createBindBtn) {
           createBindBtn.textContent = "Create & Bind Variable";
           createBindBtn.disabled = false;
@@ -1258,7 +340,7 @@
           }
         }
       } else if (msg.type === "status") {
-        showToast(msg.message, msg.isError || false);
+        showToast(msg.message, true);
       }
     };
 
@@ -1314,15 +396,11 @@
       const uContent = document.getElementById("unboundContent");
       const uActions = document.getElementById("unboundListActions");
       const uFooter = document.getElementById("unboundFooter");
-      const uTopHeader = document.querySelector("#tabUnbound .top-header");
-      const globalFooter = document.getElementById("bindVariableGlobalFooter");
       
       if (activeUnboundBindNodes) {
         if (uContent) uContent.style.display = "none";
         if (uActions) uActions.style.display = "none";
         if (uFooter) uFooter.style.display = "none";
-        if (uTopHeader) uTopHeader.style.display = "none";
-        if (globalFooter) globalFooter.style.display = "flex";
         unboundBindContainer.style.display = "flex";
         unboundBindContainer.innerHTML = "";
         
@@ -1346,10 +424,9 @@
         unboundBindContainer.appendChild(section);
         return;
       } else {
-        if (uContent) uContent.style.display = "block";
+        if (uContent) uContent.style.display = "flex";
         if (uActions) uActions.style.display = "flex";
-        if (uTopHeader) uTopHeader.style.display = "flex";
-        if (globalFooter) globalFooter.style.display = "none";
+        if (uFooter) uFooter.style.display = "flex";
         unboundBindContainer.style.display = "none";
       }
 
@@ -1359,7 +436,6 @@
       if (currentUnboundNodes.length === 0) {
         unboundEmptyState.style.display = "flex";
         scanAllUnboundBtn.style.display = "none";
-        if (uFooter) uFooter.style.display = "none";
         if (listActions) listActions.style.display = "none";
         
         const emptyTitle = unboundEmptyState.querySelector(".empty-title");
@@ -1376,7 +452,6 @@
       unboundEmptyState.style.display = "none";
       if (listActions) listActions.style.display = "flex";
       scanAllUnboundBtn.style.display = hasMoreUnbound ? "block" : "none";
-      if (uFooter) uFooter.style.display = hasMoreUnbound ? "flex" : "none";
       scanAllUnboundBtn.textContent = "Scan all labels (the rest)";
       scanAllUnboundBtn.disabled = false;
       
@@ -1388,17 +463,15 @@
         item.title = "Click to isolate this text node and create a variable";
         
         item.innerHTML = `
-          <div class="var-header" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px 4px 12px; min-width: 0;">
-            <div class="var-name-wrap" style="flex: 1; overflow: hidden; min-width: 0; gap: 8px;">
-              <div class="var-icon" style="pointer-events: none; flex-shrink: 0;">T</div>
-              <div class="var-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--text-secondary); pointer-events: none; flex-shrink: 1; min-width: 0;">${escHtml(node.name)}</div>
+          <div class="var-header" style="display: flex; justify-content: space-between; align-items: center; padding-right: 12px;">
+            <div class="var-name-wrap" style="flex: 1; overflow: hidden;">
+              <div class="var-icon" style="pointer-events: none;">T</div>
+              <div class="var-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--text-secondary); pointer-events: none;">${escHtml(node.name)}</div>
+              <a class="bind-link" style="font-size: 11px; color: var(--accent); text-decoration: none; font-weight: 500; cursor: pointer;">Bind</a>
             </div>
-            <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: 12px;">
-              <a class="locate-link" style="font-size: 11px; color: #18A0FB; text-decoration: none; font-weight: 500; cursor: pointer;">Locate</a>
-              <a class="ignore-link" style="font-size: 11px; color: var(--accent); text-decoration: none; font-weight: 500; cursor: pointer;">Ignore</a>
-            </div>
+            <a class="ignore-link" style="font-size: 11px; color: var(--accent); text-decoration: none; font-weight: 500; cursor: pointer;">Ignore</a>
           </div>
-          <div class="var-body" style="padding: 0 12px 10px 12px; pointer-events: none;">
+          <div class="var-body" style="padding: 0 12px 12px 12px; pointer-events: none;">
             <div style="font-size: 12px; color: var(--text-primary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
               ${escHtml(node.text)}
             </div>
@@ -1415,15 +488,15 @@
         });
         
         item.addEventListener("click", () => {
-          activeUnboundBindNodes = [node];
-          renderUnboundContent();
+          parent.postMessage({ pluginMessage: { type: "select-node", nodeId: node.id } }, "*");
         });
 
-        const locateLink = item.querySelector(".locate-link");
-        if (locateLink) {
-          locateLink.addEventListener("click", (e) => {
+        const bindLink = item.querySelector(".bind-link");
+        if (bindLink) {
+          bindLink.addEventListener("click", (e) => {
             e.stopPropagation();
-            parent.postMessage({ pluginMessage: { type: "select-node", nodeId: node.id } }, "*");
+            activeUnboundBindNodes = [node];
+            renderUnboundContent();
           });
         }
         
@@ -2298,7 +1371,6 @@
               <path d="M11 3.5l1.5 1.5-7.5 7.5-2.5 1 1-2.5 7.5-7.5z"/>
             </svg>
           </button>
-          <a class="done-edit-btn" style="display: none; font-size: 11px; color: #18A0FB; text-decoration: none; font-weight: 500; cursor: pointer; margin-right: 4px;">Done</a>
           ` : ""}
           <span class="chevron" title="${isExpanded ? 'Collapse variable' : 'Expand variable'}">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -2467,16 +1539,10 @@
             const nameWrap = header.querySelector(".var-name-wrap");
             const nameDiv = nameWrap.querySelector(".var-name");
             const dirtyDot = nameWrap.querySelector(".dirty-dot");
-            const unbindBtn = header.querySelector(".unbind-var-btn");
-            const copyBtn = header.querySelector(".copy-var-btn");
-            const doneBtn = header.querySelector(".done-edit-btn");
             
             nameDiv.style.display = "none";
             if (dirtyDot) dirtyDot.style.display = "none";
             editBtn.style.display = "none";
-            if (unbindBtn) unbindBtn.style.display = "none";
-            if (copyBtn) copyBtn.style.display = "none";
-            if (doneBtn) doneBtn.style.display = "block";
             if (deleteRow) deleteRow.style.display = "flex";
             
             const input = document.createElement("input");
@@ -2499,9 +1565,6 @@
                 nameDiv.style.display = "";
                 if (dirtyDot) dirtyDot.style.display = "";
                 editBtn.style.display = "";
-                if (unbindBtn) unbindBtn.style.display = "";
-                if (copyBtn) copyBtn.style.display = "";
-                if (doneBtn) doneBtn.style.display = "none";
                 if (deleteRow) {
                   deleteRow.style.display = "none";
                   const cWrap = deleteRow.querySelector(".confirm-wrap");
@@ -2514,13 +1577,6 @@
                 }
               }
             };
-
-            if (doneBtn) {
-              doneBtn.onmousedown = (ev) => {
-                ev.preventDefault(); // prevent input blur
-                submitRename();
-              };
-            }
 
             input.onblur = submitRename;
             input.onkeydown = (ev) => {
@@ -2766,6 +1822,4 @@
         parent.postMessage({ pluginMessage: { type: "resize", width: w, height: h } }, "*");
       }
     });
-  </script>
-</body>
-</html>
+  
