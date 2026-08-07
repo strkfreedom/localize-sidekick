@@ -20,7 +20,9 @@ let activeTab = "bound";
 let scanAllUnbound = false;
 let collectionFilterVal;
 let autoApplyVal;
+let bindCollectionFilterVal;
 let disabledCollections = [];
+let seenCollections = [];
 async function initPlugin() {
     const size = await figma.clientStorage.getAsync("pluginSize");
     const width = (size === null || size === void 0 ? void 0 : size.width) || 560;
@@ -31,14 +33,25 @@ async function initPlugin() {
     const savedAutoApply = await figma.clientStorage.getAsync("autoApply");
     const savedDefaultCreateCollectionId = await figma.clientStorage.getAsync("defaultCreateCollectionId");
     const savedDefaultBindCollectionId = await figma.clientStorage.getAsync("defaultBindCollectionId");
+    const savedBindCollectionFilter = await figma.clientStorage.getAsync("bindCollectionFilter");
+    if (savedBindCollectionFilter && typeof savedBindCollectionFilter === "object") {
+        const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local timezone
+        if (savedBindCollectionFilter.date === today) {
+            bindCollectionFilterVal = savedBindCollectionFilter.value;
+        }
+        // Different day → leave as undefined (resets to "all")
+    }
     if (savedActiveTab === "bound" || savedActiveTab === "unbound") {
         activeTab = savedActiveTab;
     }
     if (Array.isArray(savedNegativeList)) {
         negativeList = savedNegativeList;
     }
-    if (savedCollectionFilter) {
-        collectionFilterVal = savedCollectionFilter;
+    if (savedCollectionFilter && typeof savedCollectionFilter === "object") {
+        const today = new Date().toLocaleDateString("en-CA");
+        if (savedCollectionFilter.date === today) {
+            collectionFilterVal = savedCollectionFilter.value;
+        }
     }
     if (typeof savedAutoApply === "boolean") {
         autoApplyVal = savedAutoApply;
@@ -51,6 +64,8 @@ async function initPlugin() {
     }
     const savedDisabledCollections = await figma.clientStorage.getAsync("disabledCollections");
     disabledCollections = Array.isArray(savedDisabledCollections) ? savedDisabledCollections : [];
+    const savedSeenCollections = await figma.clientStorage.getAsync("seenCollections");
+    seenCollections = Array.isArray(savedSeenCollections) ? savedSeenCollections : [];
     figma.showUI(__html__, {
         width,
         height,
@@ -61,7 +76,7 @@ async function initPlugin() {
     await scanSelection();
     // Load libraries in background and notify UI
     ensureLibraryMaps().then(() => {
-        sendToUI({ type: "external-collections-loaded", externalCollections: availableExternalCollections });
+        sendToUI({ type: "external-collections-loaded", externalCollections: availableExternalCollections, disabledCollections });
     });
     let currentSelectionIds = "";
     // Re-scan whenever selection changes
@@ -133,7 +148,8 @@ figma.ui.onmessage = async (rawMsg) => {
     }
     if (msg.type === "update-collection-filter") {
         collectionFilterVal = msg.filter;
-        await figma.clientStorage.setAsync("collectionFilter", collectionFilterVal);
+        const today = new Date().toLocaleDateString("en-CA");
+        await figma.clientStorage.setAsync("collectionFilter", { value: collectionFilterVal, date: today });
         return;
     }
     if (msg.type === "update-auto-apply") {
@@ -219,6 +235,12 @@ figma.ui.onmessage = async (rawMsg) => {
     if (msg.type === "update-disabled-collections") {
         disabledCollections = msg.disabledCollections;
         await figma.clientStorage.setAsync("disabledCollections", disabledCollections);
+        return;
+    }
+    if (msg.type === "save-bind-collection-filter") {
+        bindCollectionFilterVal = msg.value;
+        const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local timezone
+        await figma.clientStorage.setAsync("bindCollectionFilter", { value: msg.value, date: today });
         return;
     }
     if (msg.type === "search-link-variables") {
@@ -475,15 +497,25 @@ async function ensureLibraryMaps() {
         availableExternalVariables = [];
         try {
             const libs = await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
+            let seenCollectionsChanged = false;
+            let disabledCollectionsChanged = false;
             for (const libCol of libs) {
+                // Figma API returns "Unknown" for recently added libraries until the file is synced/reloaded.
+                const libName = libCol.libraryName === "Unknown" ? "(Recently added library)" : libCol.libraryName;
                 if (libCol.key)
-                    libraryColKeyToLibNameMap.set(libCol.key, libCol.libraryName);
+                    libraryColKeyToLibNameMap.set(libCol.key, libName);
                 if (libCol.name)
-                    libraryColNameToLibNameMap.set(libCol.name, libCol.libraryName);
+                    libraryColNameToLibNameMap.set(libCol.name, libName);
                 availableExternalCollections.push({
                     id: libCol.key,
-                    name: `${libCol.libraryName} / ${libCol.name}`
+                    name: `${libName} / ${libCol.name}`
                 });
+                const isNew = !seenCollections.includes(libCol.key);
+                if (isNew) {
+                    seenCollections.push(libCol.key);
+                    seenCollectionsChanged = true;
+                }
+                let hasStringVariables = false;
                 try {
                     const vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(libCol.key);
                     for (const v of vars) {
@@ -491,6 +523,7 @@ async function ensureLibraryMaps() {
                             libraryVarToLibNameMap.set(v.key, libCol.libraryName);
                         }
                         if (v.resolvedType === "STRING") {
+                            hasStringVariables = true;
                             availableExternalVariables.push(Object.assign(Object.assign({}, v), { collectionName: `${libCol.libraryName} / ${libCol.name}`, libraryName: libCol.libraryName, collectionId: libCol.key }));
                         }
                     }
@@ -498,6 +531,16 @@ async function ensureLibraryMaps() {
                 catch (e) {
                     // Ignored
                 }
+                if (isNew && !hasStringVariables && !disabledCollections.includes(libCol.key)) {
+                    disabledCollections.push(libCol.key);
+                    disabledCollectionsChanged = true;
+                }
+            }
+            if (seenCollectionsChanged) {
+                await figma.clientStorage.setAsync("seenCollections", seenCollections);
+            }
+            if (disabledCollectionsChanged) {
+                await figma.clientStorage.setAsync("disabledCollections", disabledCollections);
             }
         }
         catch (e) {
@@ -510,8 +553,9 @@ async function getLibraryNameForVariable(variable, collection) {
     if (!variable.remote && !collection.remote)
         return "Local";
     const directLibName = collection.libraryName || variable.libraryName || collection.fileName;
-    if (directLibName && typeof directLibName === "string")
-        return directLibName;
+    if (directLibName && typeof directLibName === "string") {
+        return directLibName === "Unknown" ? "(Recently added library)" : directLibName;
+    }
     await ensureLibraryMaps();
     if (variable.key && (libraryVarToLibNameMap === null || libraryVarToLibNameMap === void 0 ? void 0 : libraryVarToLibNameMap.has(variable.key))) {
         return libraryVarToLibNameMap.get(variable.key);
@@ -522,7 +566,7 @@ async function getLibraryNameForVariable(variable, collection) {
     if (collection.name && (libraryColNameToLibNameMap === null || libraryColNameToLibNameMap === void 0 ? void 0 : libraryColNameToLibNameMap.has(collection.name))) {
         return libraryColNameToLibNameMap.get(collection.name);
     }
-    return "Library";
+    return "(Recently added library)";
 }
 let activeUnboundNode;
 let activeLocalCollections;
@@ -562,7 +606,7 @@ async function scanSelection() {
                 c.modes.forEach(m => availableModes.add(getStandardLanguageName(m.name)));
             }
         });
-        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections, availableModes: Array.from(availableModes) });
+        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections, availableModes: Array.from(availableModes), bindCollectionFilter: bindCollectionFilterVal });
         return;
     }
     sendToUI({ type: "loading-start" });
@@ -573,7 +617,7 @@ async function scanSelection() {
     }
     if (textNodes.length === 0) {
         activeVariableIds = [];
-        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: false, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections });
+        sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: false, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections, bindCollectionFilter: bindCollectionFilterVal });
         return;
     }
     const variableIds = new Set();
@@ -670,7 +714,8 @@ async function fetchAndSendNextBatch(isInitial) {
                 externalCollections: availableExternalCollections,
                 disabledCollections,
                 availableModes: Array.from(availableModes),
-                allUnbound: activeAllUnbound
+                allUnbound: activeAllUnbound,
+                bindCollectionFilter: bindCollectionFilterVal
             });
         }
         return;

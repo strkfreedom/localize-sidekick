@@ -883,6 +883,7 @@
     let localCollections = [];
     let externalCollections = [];
     let lastCollectionId = null;
+    let bindCollectionFilter = "all"; // Persisted via clientStorage
     let defaultCreateCollectionId = null;
     let disabledCollections = [];
     let lastBoundVariableName = null;
@@ -963,6 +964,7 @@
       if (msg.type === "external-collections-loaded") {
         if (msg.externalCollections) {
           externalCollections = msg.externalCollections;
+          if (msg.disabledCollections) disabledCollections = msg.disabledCollections;
           renderCollectionsSettings();
           updateSettingsDropdown();
           
@@ -1036,6 +1038,7 @@
               selectedPreviewMode = "";
             }
           }
+          if (msg.bindCollectionFilter) bindCollectionFilter = msg.bindCollectionFilter;
           if (msg.lastCollectionId) lastCollectionId = msg.lastCollectionId;
           if (msg.defaultCreateCollectionId !== undefined) {
             defaultCreateCollectionId = msg.defaultCreateCollectionId;
@@ -1289,9 +1292,10 @@
         
         item.innerHTML = `
           <div class="var-header" style="display: flex; justify-content: space-between; align-items: center; padding-right: 12px;">
-            <div class="var-name-wrap" style="flex: 1; overflow: hidden; pointer-events: none;">
-              <div class="var-icon">T</div>
-              <div class="var-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--text-secondary);">${escHtml(node.name)}</div>
+            <div class="var-name-wrap" style="flex: 1; overflow: hidden;">
+              <div class="var-icon" style="pointer-events: none;">T</div>
+              <div class="var-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--text-secondary); pointer-events: none;">${escHtml(node.name)}</div>
+              <a class="bind-link" style="font-size: 11px; color: var(--accent); text-decoration: none; font-weight: 500; cursor: pointer;">Bind</a>
             </div>
             <a class="ignore-link" style="font-size: 11px; color: var(--accent); text-decoration: none; font-weight: 500; cursor: pointer;">Ignore</a>
           </div>
@@ -1314,6 +1318,15 @@
         item.addEventListener("click", () => {
           parent.postMessage({ pluginMessage: { type: "select-node", nodeId: node.id } }, "*");
         });
+
+        const bindLink = item.querySelector(".bind-link");
+        if (bindLink) {
+          bindLink.addEventListener("click", (e) => {
+            e.stopPropagation();
+            parent.postMessage({ pluginMessage: { type: "select-node", nodeId: node.id } }, "*");
+            switchTab("bound", true);
+          });
+        }
         
         const ignoreLink = item.querySelector(".ignore-link");
         if (ignoreLink) {
@@ -1820,8 +1833,9 @@
         }
 
         if (linkVarCollectionFilter) {
-          // Populate options
-          let defaultVal = "all";
+          // Populate options — restore last-used filter from clientStorage
+          const savedFilter = bindCollectionFilter || "all";
+          let defaultVal = savedFilter;
           
           let optionsHtml = `
             <option value="all" ${defaultVal === "all" ? "selected" : ""}>All collections</option>
@@ -1848,8 +1862,18 @@
           }
           
           linkVarCollectionFilter.innerHTML = optionsHtml;
-          
-          linkVarCollectionFilter.addEventListener("change", triggerSearch);
+
+          // Restore saved value; fall back to "all" if it no longer exists
+          linkVarCollectionFilter.value = savedFilter;
+          if (linkVarCollectionFilter.value !== savedFilter) {
+            linkVarCollectionFilter.value = "all";
+          }
+
+          linkVarCollectionFilter.addEventListener("change", () => {
+            bindCollectionFilter = linkVarCollectionFilter.value;
+            parent.postMessage({ pluginMessage: { type: "save-bind-collection-filter", value: linkVarCollectionFilter.value } }, "*");
+            triggerSearch();
+          });
         }
 
         // Pre-fill search with the single unbound node's text for immediate relevant results

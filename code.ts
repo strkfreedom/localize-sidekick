@@ -65,6 +65,7 @@ interface ScanResult {
   disabledCollections?: string[];
   availableModes?: string[];
   allUnbound?: boolean;
+  bindCollectionFilter?: string;
 }
 
 interface LoadMoreResult {
@@ -101,6 +102,7 @@ interface SearchLinkVariablesResultMessage {
 interface ExternalCollectionsLoadedMessage {
   type: "external-collections-loaded";
   externalCollections: { id: string, name: string }[];
+  disabledCollections?: string[];
 }
 
 type PluginToUI = ScanResult | LoadMoreResult | CreateErrorMessage | RenameErrorMessage | StatusMessage | LoadingStartMessage | SearchLinkVariablesResultMessage | ExternalCollectionsLoadedMessage;
@@ -219,7 +221,8 @@ type UIToPlugin =
   | SearchLinkVariablesMessage
   | BindExistingVariableMessage
   | UpdateDisabledCollectionsMessage
-  | UnbindVariableMessage;
+  | UnbindVariableMessage
+  | SaveBindCollectionFilterMessage;
 
 interface SearchLinkVariablesMessage {
   type: "search-link-variables";
@@ -242,6 +245,11 @@ interface UnbindVariableMessage {
   variableId: string;
 }
 
+interface SaveBindCollectionFilterMessage {
+  type: "save-bind-collection-filter";
+  value: string;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin entry point
 // ---------------------------------------------------------------------------
@@ -253,8 +261,10 @@ let activeTab: "bound" | "unbound" = "bound";
 let scanAllUnbound = false;
 let collectionFilterVal: string | undefined;
 let autoApplyVal: boolean | undefined;
+let bindCollectionFilterVal: string | undefined;
 
 let disabledCollections: string[] = [];
+let seenCollections: string[] = [];
 
 async function initPlugin() {
   const size = await figma.clientStorage.getAsync("pluginSize");
@@ -263,10 +273,18 @@ async function initPlugin() {
 
   const savedActiveTab = await figma.clientStorage.getAsync("activeTab");
   const savedNegativeList = await figma.clientStorage.getAsync("negativeList");
-  const savedCollectionFilter = await figma.clientStorage.getAsync("collectionFilter");
+  const savedCollectionFilter = await figma.clientStorage.getAsync("collectionFilter") as { value: string, date: string } | undefined;
   const savedAutoApply = await figma.clientStorage.getAsync("autoApply");
   const savedDefaultCreateCollectionId = await figma.clientStorage.getAsync("defaultCreateCollectionId");
   const savedDefaultBindCollectionId = await figma.clientStorage.getAsync("defaultBindCollectionId");
+  const savedBindCollectionFilter = await figma.clientStorage.getAsync("bindCollectionFilter") as { value: string, date: string } | undefined;
+  if (savedBindCollectionFilter && typeof savedBindCollectionFilter === "object") {
+    const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local timezone
+    if (savedBindCollectionFilter.date === today) {
+      bindCollectionFilterVal = savedBindCollectionFilter.value;
+    }
+    // Different day → leave as undefined (resets to "all")
+  }
   
   if (savedActiveTab === "bound" || savedActiveTab === "unbound") {
     activeTab = savedActiveTab;
@@ -274,8 +292,11 @@ async function initPlugin() {
   if (Array.isArray(savedNegativeList)) {
     negativeList = savedNegativeList;
   }
-  if (savedCollectionFilter) {
-    collectionFilterVal = savedCollectionFilter;
+  if (savedCollectionFilter && typeof savedCollectionFilter === "object") {
+    const today = new Date().toLocaleDateString("en-CA");
+    if (savedCollectionFilter.date === today) {
+      collectionFilterVal = savedCollectionFilter.value;
+    }
   }
   if (typeof savedAutoApply === "boolean") {
     autoApplyVal = savedAutoApply;
@@ -290,6 +311,9 @@ async function initPlugin() {
   const savedDisabledCollections = await figma.clientStorage.getAsync("disabledCollections");
   disabledCollections = Array.isArray(savedDisabledCollections) ? savedDisabledCollections : [];
 
+  const savedSeenCollections = await figma.clientStorage.getAsync("seenCollections");
+  seenCollections = Array.isArray(savedSeenCollections) ? savedSeenCollections : [];
+
   figma.showUI(__html__, {
     width,
     height,
@@ -302,7 +326,7 @@ async function initPlugin() {
 
   // Load libraries in background and notify UI
   ensureLibraryMaps().then(() => {
-    sendToUI({ type: "external-collections-loaded", externalCollections: availableExternalCollections });
+    sendToUI({ type: "external-collections-loaded", externalCollections: availableExternalCollections, disabledCollections });
   });
 
   let currentSelectionIds = "";
@@ -389,7 +413,8 @@ figma.ui.onmessage = async (rawMsg: unknown) => {
 
   if (msg.type === "update-collection-filter") {
     collectionFilterVal = msg.filter;
-    await figma.clientStorage.setAsync("collectionFilter", collectionFilterVal);
+    const today = new Date().toLocaleDateString("en-CA");
+    await figma.clientStorage.setAsync("collectionFilter", { value: collectionFilterVal, date: today });
     return;
   }
 
@@ -476,6 +501,13 @@ figma.ui.onmessage = async (rawMsg: unknown) => {
   if (msg.type === "update-disabled-collections") {
     disabledCollections = msg.disabledCollections;
     await figma.clientStorage.setAsync("disabledCollections", disabledCollections);
+    return;
+  }
+
+  if (msg.type === "save-bind-collection-filter") {
+    bindCollectionFilterVal = msg.value;
+    const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local timezone
+    await figma.clientStorage.setAsync("bindCollectionFilter", { value: msg.value, date: today });
     return;
   }
 
@@ -743,14 +775,27 @@ async function ensureLibraryMaps() {
 
     try {
       const libs = await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
+      let seenCollectionsChanged = false;
+      let disabledCollectionsChanged = false;
+
       for (const libCol of libs) {
-        if (libCol.key) libraryColKeyToLibNameMap.set(libCol.key, libCol.libraryName);
-        if (libCol.name) libraryColNameToLibNameMap.set(libCol.name, libCol.libraryName);
+        // Figma API returns "Unknown" for recently added libraries until the file is synced/reloaded.
+        const libName = libCol.libraryName === "Unknown" ? "(Recently added library)" : libCol.libraryName;
+        
+        if (libCol.key) libraryColKeyToLibNameMap.set(libCol.key, libName);
+        if (libCol.name) libraryColNameToLibNameMap.set(libCol.name, libName);
 
         availableExternalCollections.push({
           id: libCol.key,
-          name: `${libCol.libraryName} / ${libCol.name}`
+          name: `${libName} / ${libCol.name}`
         });
+
+        const isNew = !seenCollections.includes(libCol.key);
+        if (isNew) {
+          seenCollections.push(libCol.key);
+          seenCollectionsChanged = true;
+        }
+        let hasStringVariables = false;
 
         try {
           const vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(libCol.key);
@@ -759,6 +804,7 @@ async function ensureLibraryMaps() {
               libraryVarToLibNameMap.set(v.key, libCol.libraryName);
             }
             if (v.resolvedType === "STRING") {
+              hasStringVariables = true;
               availableExternalVariables.push({
                 ...v,
                 collectionName: `${libCol.libraryName} / ${libCol.name}`,
@@ -770,6 +816,18 @@ async function ensureLibraryMaps() {
         } catch (e) {
           // Ignored
         }
+
+        if (isNew && !hasStringVariables && !disabledCollections.includes(libCol.key)) {
+          disabledCollections.push(libCol.key);
+          disabledCollectionsChanged = true;
+        }
+      }
+
+      if (seenCollectionsChanged) {
+        await figma.clientStorage.setAsync("seenCollections", seenCollections);
+      }
+      if (disabledCollectionsChanged) {
+        await figma.clientStorage.setAsync("disabledCollections", disabledCollections);
       }
     } catch (e) {
       console.warn("Failed to fetch available library variable collections", e);
@@ -783,7 +841,9 @@ async function getLibraryNameForVariable(variable: Variable, collection: Variabl
   if (!variable.remote && !collection.remote) return "Local";
 
   const directLibName = (collection as any).libraryName || (variable as any).libraryName || (collection as any).fileName;
-  if (directLibName && typeof directLibName === "string") return directLibName;
+  if (directLibName && typeof directLibName === "string") {
+    return directLibName === "Unknown" ? "(Recently added library)" : directLibName;
+  }
 
   await ensureLibraryMaps();
 
@@ -799,7 +859,7 @@ async function getLibraryNameForVariable(variable: Variable, collection: Variabl
     return libraryColNameToLibNameMap.get(collection.name)!;
   }
 
-  return "Library";
+  return "(Recently added library)";
 }
 
 let activeUnboundNode: UnboundNodeInfo | undefined;
@@ -843,7 +903,7 @@ async function scanSelection() {
         c.modes.forEach(m => availableModes.add(getStandardLanguageName(m.name)));
       }
     });
-    sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections, availableModes: Array.from(availableModes) });
+    sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: true, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections, availableModes: Array.from(availableModes), bindCollectionFilter: bindCollectionFilterVal });
     return;
   }
   sendToUI({ type: "loading-start" });
@@ -856,7 +916,7 @@ async function scanSelection() {
 
   if (textNodes.length === 0) {
     activeVariableIds = [];
-    sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: false, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections });
+    sendToUI({ type: "scan-result", variables: [], hasMore: false, negativeList, unboundNodes: [], isSelectionEmpty: false, collectionFilter: collectionFilterVal, autoApply: autoApplyVal, defaultCreateCollectionId, defaultBindCollectionId, localCollections: activeLocalCollections, externalCollections: availableExternalCollections, disabledCollections, bindCollectionFilter: bindCollectionFilterVal });
     return;
   }
 
@@ -948,7 +1008,8 @@ async function fetchAndSendNextBatch(isInitial: boolean) {
         externalCollections: availableExternalCollections,
         disabledCollections,
         availableModes: Array.from(availableModes),
-        allUnbound: activeAllUnbound
+        allUnbound: activeAllUnbound,
+        bindCollectionFilter: bindCollectionFilterVal
       });
     }
     return;
