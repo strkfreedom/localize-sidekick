@@ -394,7 +394,6 @@ figma.ui.onmessage = async (rawMsg: unknown) => {
     const textNodes = nodes.filter(n => n && n.type === "TEXT") as SceneNode[];
     if (textNodes.length > 0) {
       figma.currentPage.selection = textNodes;
-      figma.viewport.scrollAndZoomIntoView(textNodes);
     }
     return;
   }
@@ -878,6 +877,15 @@ function isNodeIgnored(node: SceneNode): boolean {
   return false;
 }
 
+function isNodeVisible(node: BaseNode | null): boolean {
+  let curr = node;
+  while (curr && curr.type !== "DOCUMENT" && curr.type !== "PAGE") {
+    if ("visible" in curr && curr.visible === false) return false;
+    curr = curr.parent;
+  }
+  return true;
+}
+
 let chunkStartTime = Date.now();
 async function yieldIfNeeded() {
   if (Date.now() - chunkStartTime > 12) {
@@ -930,11 +938,13 @@ async function scanSelection() {
     if (boundId) {
       variableIds.add(boundId);
     } else {
-      allUnboundNodes.push({
-        id: textNode.id,
-        name: textNode.name,
-        text: textNode.characters
-      });
+      if (isNodeVisible(textNode)) {
+        allUnboundNodes.push({
+          id: textNode.id,
+          name: textNode.name,
+          text: textNode.characters
+        });
+      }
     }
   }
 
